@@ -66,6 +66,9 @@ fewer than 20 results, and a listener check that fails stays unverified.
 
 See the [Hidden Gems guide](docs/HIDDEN_GEMS.md) for the discovery process,
 privacy details, limits, and troubleshooting.
+Already using the earlier Spotify listener checks? Follow the
+[upgrade guide](docs/HIDDEN_GEMS.md#upgrade-from-spotify-listener-checks) to
+verify the new metric and choose a deeper search without clearing your feedback.
 
 ## Why you will love it
 
