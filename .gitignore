@@ -2,3 +2,14 @@ scripts/__pycache__/
 **/__pycache__/
 *.pyc
 backend/target/
+
+# Personal configuration and credentials never belong in the public fork.
+.env
+.env.*
+*.local.json
+*.pem
+*.key
+/discovery/
+/session.json
+/shell.json
+/spotifyd.conf

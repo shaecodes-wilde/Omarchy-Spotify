@@ -23,7 +23,8 @@ Item {
   readonly property string pluginId: manifest && manifest.id
     ? String(manifest.id) : "quickshell.spotify"
   readonly property string pluginDir: manifest && manifest.__sourceDir
-    ? String(manifest.__sourceDir) : ""
+    ? String(manifest.__sourceDir)
+    : decodeURIComponent(String(Qt.resolvedUrl("."))).replace(/^file:\/\//, "").replace(/\/$/, "")
   readonly property string homeDirectory: Quickshell.env("HOME") || ""
   readonly property string stateHome: {
     var explicit = String(Quickshell.env("XDG_STATE_HOME") || "").trim()
@@ -50,7 +51,11 @@ Item {
     maxBarTextWidth: "240",
     fixedBarWidth: "Off",
     audioQuality: "320 kbps",
-    clientId: ""
+    clientId: "",
+    lastFmUsername: "",
+    lastFmApiKey: "",
+    discoveryObscurity: "Obscure",
+    discoveryAdventure: "Balanced"
   })
   property var settings: Api.shallowCopy(defaultSettingValues)
 
@@ -336,6 +341,14 @@ Item {
   readonly property int savedUriCacheLimit: 4096
   readonly property int savedUriFreshnessMs: 300000
 
+  readonly property alias discovery: discoveryController
+  DiscoveryController { id: discoveryController; host: root }
+
+  function loadHiddenGems(force) {
+    if (!currentUserId && accountConnected) loadProfile()
+    discoveryController.ensure(force)
+  }
+
   property var recentTracks: []
   // Most recent play from Spotify's history, kept while nothing is loaded so
   // Play can continue there the way the desktop app's footer does.
@@ -352,6 +365,7 @@ Item {
     || canResumeLastPlayed
   property var topTracks: []
   property var topArtists: []
+  readonly property var topAlbums: Api.topAlbumsFromTracks(topTracks)
   property bool homeLoaded: false
   property int homeRequestsPending: 0
   readonly property bool homeLoading: homeRequestsPending > 0
@@ -497,7 +511,8 @@ Item {
     var keys = ["deviceName", "idleShutdownMinutes", "showMiniPlayer",
       "showVinylRecord", "shortcutPlayer", "shortcutHints", "showLyrics", "showArtwork", "showTrackTitle", "showArtistName",
       "showPausedTrack", "scrollBarText", "scrollSpeed", "maxBarTextWidth",
-      "fixedBarWidth", "audioQuality", "clientId"]
+      "fixedBarWidth", "audioQuality", "clientId", "lastFmUsername", "lastFmApiKey",
+      "discoveryObscurity", "discoveryAdventure"]
     for (var i = 0; i < keys.length; i++) {
       var key = keys[i]
       if (source[key] !== undefined) next[key] = source[key]
@@ -530,6 +545,13 @@ Item {
     // Anything that is not a 32-hex ID (including empty) means "keep shipped".
     var customClientId = String(next.clientId || "").trim()
     next.clientId = customClientId.toLowerCase()
+    next.lastFmUsername = String(next.lastFmUsername || "").trim()
+    next.lastFmApiKey = String(next.lastFmApiKey || "").trim()
+    if (next.discoveryObscurity === "Balanced") next.discoveryObscurity = "Obscure"
+    if (["Obscure", "Underground", "Deep underground"].indexOf(next.discoveryObscurity) < 0)
+      next.discoveryObscurity = "Obscure"
+    if (["Close", "Balanced", "Adventurous"].indexOf(next.discoveryAdventure) < 0)
+      next.discoveryAdventure = "Balanced"
     return next
   }
 
@@ -649,8 +671,12 @@ Item {
 
   function configuredEntry() {
     var config = shell && shell.shellConfig ? shell.shellConfig : null
-    if (!config) return null
-    var layout = config.bar && config.bar.layout ? config.bar.layout : null
+    // Omarchy's scoped third-party API exposes barConfig rather than the
+    // host's full shellConfig. Read settings from either supported surface.
+    var barConfig = config && config.bar ? config.bar
+      : (shell && shell.barConfig ? shell.barConfig : null)
+    if (!config && !barConfig) return null
+    var layout = barConfig && barConfig.layout ? barConfig.layout : null
     var sections = ["left", "center", "right"]
     if (layout) {
       for (var s = 0; s < sections.length; s++) {
@@ -659,7 +685,7 @@ Item {
           if (rows[i] && String(rows[i].id || "") === pluginId) return rows[i]
       }
     }
-    var plugins = Array.isArray(config.plugins) ? config.plugins : []
+    var plugins = config && Array.isArray(config.plugins) ? config.plugins : []
     for (var p = 0; p < plugins.length; p++)
       if (plugins[p] && String(plugins[p].id || "") === pluginId) return plugins[p]
     return null
@@ -1247,8 +1273,10 @@ Item {
   function openView(view, force) {
     activeView = normalizedView(view)
     if (!authManager.loggedIn && !authManager.tokenIsFresh()) return
-    if (activeView === "home" && (force || !homeLoaded))
-      loadHome()
+    if (activeView === "home") {
+      if (force || !homeLoaded) loadHome()
+      loadHiddenGems(force)
+    }
     else if (activeView === "discover" && (force || !discoverLoaded))
       loadDiscover()
     else if (activeView === "search" && force && searchQuery)
@@ -2386,7 +2414,7 @@ Item {
     if (error) fail(error)
     if (homeRequestsPending === 0) {
       homeLoaded = true
-      checkSavedItems(recentTracks.concat(topTracks).concat(topArtists))
+      checkSavedItems(recentTracks.concat(topTracks).concat(topArtists).concat(topAlbums))
     }
   }
 
@@ -2434,8 +2462,10 @@ Item {
 
   function homeItems(kind) {
     var value = String(kind || "recent")
+    if (value === "gems") return discoveryController.items
     if (value === "tracks") return topTracks
     if (value === "artists") return topArtists
+    if (value === "albums") return topAlbums
     return recentTracks
   }
 
@@ -3604,6 +3634,7 @@ Item {
   }
 
   function clearData() {
+    discoveryController.reset(false)
     radioSerial++
     playlistItemsSerial++
     clearPendingPlayback()
@@ -3766,6 +3797,7 @@ Item {
     target: root.shell
     ignoreUnknownSignals: true
     function onShellConfigChanged() { root.syncSettings() }
+    function onBarConfigChanged() { root.syncSettings() }
   }
 
   Connections {

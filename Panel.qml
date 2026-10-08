@@ -26,14 +26,14 @@ Item {
   Timer {
     interval: 1000
     repeat: true
-    running: root.opened && root.showingUniversalSearch && root.service
+    running: root.opened && root.service
       && (root.service.searchLoading || root.searchCooldownSeconds > 0)
     onTriggered: root.searchClock = Date.now()
   }
   property string searchText: ""
   property string searchType: "track"
   property string libraryType: "tracks"
-  property string homeType: "recent"
+  property string homeType: "gems"
   property string libraryFilter: ""
   property string librarySort: "default"
   property string playlistFilter: ""
@@ -57,6 +57,8 @@ Item {
   property int restoredDetailItemCount: 0
   readonly property bool artworkVisible: !service || service.artworkEnabled
 
+  property string draftLastFmUsername: ""
+  property string draftLastFmApiKey: ""
   property string draftClientId: ""
   property string draftDeviceName: "Omarchy Spotify"
   property string draftIdleMinutes: "15"
@@ -195,6 +197,8 @@ Item {
 
   function syncDraftSettings() {
     if (!service) return
+    draftLastFmUsername = String(service.settings.lastFmUsername || "")
+    draftLastFmApiKey = String(service.settings.lastFmApiKey || "")
     draftClientId = String(service.settings.clientId || "")
     draftDeviceName = service.deviceName
     draftIdleMinutes = String(service.idleShutdownMinutes)
@@ -468,8 +472,8 @@ Item {
       ? String(state.searchType) : "track"
     libraryType = ["tracks", "albums", "artists", "shows", "episodes", "audiobooks"]
       .indexOf(String(state.libraryType || "")) >= 0 ? String(state.libraryType) : "tracks"
-    homeType = ["recent", "tracks", "artists"].indexOf(String(state.homeType || "")) >= 0
-      ? String(state.homeType) : "recent"
+    homeType = ["gems", "recent", "tracks", "artists", "albums"].indexOf(String(state.homeType || "")) >= 0
+      ? String(state.homeType) : "gems"
     libraryFilter = String(state.libraryFilter || "")
     librarySort = String(state.librarySort || "default")
     playlistFilter = String(state.playlistFilter || "")
@@ -1006,10 +1010,21 @@ Item {
     return actions
   }
 
+  function cycleDiscoverySetting(key) {
+    if (!service) return
+    var options = key === "discoveryObscurity"
+      ? ["Obscure", "Underground", "Deep underground"] : ["Close", "Balanced", "Adventurous"]
+    var values = {}
+    values[key] = options[(options.indexOf(service.settings[key])+1)%options.length]
+    service.persistSettings(values)
+  }
+
   function pageCursorActions() {
     var actions = []
     if (currentTab === "home")
-      actions.push("home-recent", "home-tracks", "home-artists")
+      actions.push("home-gems", "home-recent", "home-tracks", "home-artists", "home-albums")
+    if (currentTab === "home" && homeType === "gems")
+      actions.push("gem-obscurity", "gem-adventure", "gem-refresh", "gem-settings")
     if (currentTab === "library")
       actions.push("library-tracks", "library-albums", "library-artists",
         "library-shows", "library-episodes", "library-audiobooks")
@@ -1269,6 +1284,10 @@ Item {
     else if (action === "devices") chooseTab("devices")
     else if (action === "sleep") sleepPopup.open()
     else if (action === "volume") toggleMute()
+    else if (action === "gem-obscurity") cycleDiscoverySetting("discoveryObscurity")
+    else if (action === "gem-adventure") cycleDiscoverySetting("discoveryAdventure")
+    else if (action === "gem-refresh" && service) service.loadHiddenGems(true)
+    else if (action === "gem-settings") chooseTab("setup")
     else if (action.indexOf("home-") === 0) homeType = action.substring(5)
     else if (action.indexOf("library-") === 0) {
       libraryType = action.substring(8)
@@ -1872,6 +1891,8 @@ Item {
     var requestedDetail = requestedTab === "detail" && payload.detailItem
       ? payload.detailItem : null
     restoreUiState(!requestedDetail)
+    if (requestedTab === "home" && ["gems", "recent", "tracks", "artists", "albums"].indexOf(String(payload.homeType || "")) >= 0)
+      homeType = String(payload.homeType)
     if (requestedDetail) {
       currentTab = "detail"
       navigationStack = []
@@ -2072,6 +2093,21 @@ Item {
     return searchPage
   }
 
+  function discoveryStatus() {
+    if (!service || !service.discovery) return JSON.stringify({ available: false })
+    var feed = service.discovery
+    return JSON.stringify({ available: true, username: feed.username,
+      apiKeyConfigured: !!feed.apiKey, loading: feed.loading, message: feed.setupMessage || feed.message,
+      importedScrobbles: feed.importedCount, recommendations: feed.items.length,
+      listenerMetric: "Spotify monthly listeners", listenerCeiling: feed.obscurity === "Deep underground" ? 10000
+        : feed.obscurity === "Underground" ? 50000 : 200000,
+      checkedArtists: feed.verificationCount, verifiedCandidates: feed.verifiedArtists.length,
+      unknownCounts: feed.unknownCounts, countSource: "Spotify public artist pages",
+      storeReady: feed.storeReady, spotifyProfileReady: !!service.currentUserId,
+      spotifyConnected: service.accountConnected, spotifyError: service.lastError,
+      spotifyCooldownUntil: service.searchCooldownUntil, tab: currentTab, homeType: homeType })
+  }
+
   function pageTitle() {
     if (currentTab === "login") return "Log in to Spotify"
     if (showingUniversalSearch) return "Search Spotify"
@@ -2094,7 +2130,7 @@ Item {
     if (showingUniversalSearch) return activeSearchScope.available
       ? "Searching everywhere — enable the area checkmark to narrow the results"
       : "Songs, artists, albums, playlists, podcasts and audiobooks"
-    if (currentTab === "home") return "Recently played and your personal favorites"
+    if (currentTab === "home") return "Hidden gems shaped by your listening, plus your personal favorites"
     if (currentTab === "discover") return "Personal mixes and fresh music from Spotify"
     if (currentTab === "library") return "Songs, albums, artists, podcasts and audiobooks"
     if (currentTab === "playlists") return "Your Spotify playlists"
@@ -2577,6 +2613,25 @@ Item {
         onClicked: {
           mediaContextMenu.close()
           if (root.service) root.service.startRadio(root.contextItem)
+        }
+      }
+
+      ContextMenuButton {
+        contextAction: "ctx-discovery-more"
+        visible: !!root.contextItem && !!root.contextItem.discoveryKey
+        text: "More like this"
+        onClicked: {
+          if (root.service) root.service.discovery.rate(root.contextItem, "more")
+          mediaContextMenu.close()
+        }
+      }
+      ContextMenuButton {
+        contextAction: "ctx-discovery-less"
+        visible: !!root.contextItem && !!root.contextItem.discoveryKey
+        text: "Less like this · hide"
+        onClicked: {
+          if (root.service) root.service.discovery.rate(root.contextItem, "less")
+          mediaContextMenu.close()
         }
       }
 
@@ -3872,7 +3927,8 @@ Item {
               anchors.topMargin: visible ? Style.space(6) : 0
               implicitHeight: visible ? messageText.implicitHeight + Style.space(12) : 0
               height: implicitHeight
-              visible: root.service && (root.service.lastError !== "" || root.service.statusMessage !== "")
+              visible: root.service && (root.searchCooldownSeconds > 0
+                || root.service.lastError !== "" || root.service.statusMessage !== "")
               color: root.service && root.service.lastError !== ""
                 ? Style.selectedFillFor(root.foreground, Color.urgent)
                 : Style.normalFillFor(root.foreground, root.accent)
@@ -3884,7 +3940,10 @@ Item {
                 id: messageText
                 anchors.fill: parent
                 anchors.margins: Style.space(6)
-                text: !root.service ? "" : (root.service.lastError || root.service.statusMessage)
+                text: !root.service ? "" : root.searchCooldownSeconds > 0
+                  ? "Spotify is limiting requests. Retrying in " + root.searchCooldownSeconds
+                    + " seconds. If this keeps happening, set a personal Spotify Developer app client ID in Settings."
+                  : (root.service.lastError || root.service.statusMessage)
                 color: root.foreground
                 font.family: root.fontFamily
                 font.pixelSize: Style.font.bodySmall
@@ -4581,9 +4640,11 @@ Item {
 
           Repeater {
             model: [
+              { type: "gems", label: "Hidden gems", icon: "󰎆" },
               { type: "recent", label: "Recently played", icon: "󰋚" },
               { type: "tracks", label: "Top songs", icon: "󰎈" },
-              { type: "artists", label: "Top artists", icon: "󰠃" }
+              { type: "artists", label: "Top artists", icon: "󰠃" },
+              { type: "albums", label: "Top albums", icon: "󰀥" }
             ]
             Button {
               required property var modelData
@@ -4591,6 +4652,8 @@ Item {
               iconText: modelData.icon
               foreground: root.foreground
               selected: root.homeType === modelData.type
+              tooltipText: modelData.type === "albums"
+                ? "Albums ranked by their songs in your Top songs" : ""
               focusable: false
               hasCursor: root.cursorOn("page", "home-" + modelData.type)
               onClicked: root.homeType = modelData.type
@@ -4602,9 +4665,66 @@ Item {
           }
         }
 
+        Flow {
+          id: gemControls
+          width: parent.width
+          visible: root.homeType === "gems"
+          spacing: Style.space(5)
+          Button {
+            text: root.service ? root.service.discovery.obscurityLabel : "Obscure · <200,000"
+            foreground: root.foreground
+            tooltipText: "Spotify monthly listeners: Obscure <200,000; Underground <50,000; Deep underground <10,000. Unknown counts are excluded."
+            focusable: false
+            hasCursor: root.cursorOn("page", "gem-obscurity")
+            onHovered: function(on) { if (on) root.setPanelCursor("page", "gem-obscurity") }
+            KeyHint { region: "page"; action: "gem-obscurity" }
+            onClicked: root.cycleDiscoverySetting("discoveryObscurity")
+          }
+          Button {
+            text: "Adventure · " + (root.service ? root.service.settings.discoveryAdventure : "Balanced")
+            foreground: root.foreground
+            tooltipText: "Cycle Close, Balanced, and Adventurous"
+            focusable: false
+            hasCursor: root.cursorOn("page", "gem-adventure")
+            onHovered: function(on) { if (on) root.setPanelCursor("page", "gem-adventure") }
+            KeyHint { region: "page"; action: "gem-adventure" }
+            onClicked: root.cycleDiscoverySetting("discoveryAdventure")
+          }
+          Button {
+            text: "Refresh gems"
+            foreground: root.foreground
+            enabled: root.service && !root.service.discovery.loading
+            focusable: false
+            hasCursor: root.cursorOn("page", "gem-refresh")
+            onHovered: function(on) { if (on) root.setPanelCursor("page", "gem-refresh") }
+            KeyHint { region: "page"; action: "gem-refresh" }
+            onClicked: if (root.service) root.service.loadHiddenGems(true)
+          }
+          Button {
+            text: "Last.fm settings"
+            foreground: root.foreground
+            focusable: false
+            hasCursor: root.cursorOn("page", "gem-settings")
+            onHovered: function(on) { if (on) root.setPanelCursor("page", "gem-settings") }
+            KeyHint { region: "page"; action: "gem-settings" }
+            onClicked: root.chooseTab("setup")
+          }
+        }
+        Text {
+          id: gemStatus
+          width: parent.width
+          text: root.service ? root.service.discovery.message || root.service.discovery.warning : ""
+          visible: root.homeType === "gems" && text !== ""
+          textFormat: Text.PlainText
+          color: root.muted
+          font.family: root.fontFamily
+          font.pixelSize: Style.font.caption
+          wrapMode: Text.WordWrap
+        }
+
         MediaCollection {
           width: parent.width
-          height: Math.max(40, parent.height - homeTypes.height - parent.spacing)
+          height: Math.max(40, parent.height - homeTypes.height - (gemControls.visible ? gemControls.height : 0) - (gemStatus.visible ? gemStatus.height : 0) - parent.spacing * (root.homeType === "gems" ? 3 : 1))
           service: root.service
           sourceItems: root.service ? root.service.homeItems(root.homeType) : []
           filterText: root.homeFilter
@@ -4612,11 +4732,14 @@ Item {
           showQueue: true
           showSave: true
           browseContexts: true
-          loading: root.service && root.service.homeLoading
+          loading: root.service && (root.homeType === "gems"
+            ? root.service.discovery.loading : root.service.homeLoading)
           hasMore: false
           restoredContentY: root.scrollFor("home:" + root.homeType)
           stateKey: "home:" + root.homeType
-          emptyMessage: root.service && root.service.homeLoading
+          emptyMessage: root.homeType === "gems"
+            ? (root.service ? root.service.discovery.setupMessage || root.service.discovery.message || "Your discoveries will appear here." : "Connect Spotify to find hidden gems.")
+            : root.service && root.service.homeLoading
             ? "Loading your listening history…"
             : (root.homeFilter.trim() ? "No matches in " + root.activeSearchScope.label + "."
               : "No listening history is available yet.")
@@ -6593,6 +6716,67 @@ Item {
                   || /^[0-9a-f]{32}$/i.test(root.draftClientId.trim()))
                   && root.draftClientId.trim().toLowerCase() !== String(root.service.settings.clientId || "")
                 onClicked: root.service.persistSettings({ clientId: root.draftClientId.trim() })
+              }
+            }
+
+            Column {
+              width: parent.width
+              spacing: Style.space(6)
+              Text {
+                text: "LAST.FM · HIDDEN GEMS"
+                color: root.muted
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.caption
+                font.bold: true
+              }
+              TextField {
+                width: parent.width
+                foreground: root.foreground
+                placeholderText: "Last.fm username"
+                text: root.draftLastFmUsername
+                onTextEdited: root.draftLastFmUsername = text
+              }
+              TextField {
+                width: parent.width
+                foreground: root.foreground
+                password: true
+                placeholderText: "Last.fm application API key"
+                text: root.draftLastFmApiKey
+                onTextEdited: root.draftLastFmApiKey = text
+              }
+              Text {
+                width: parent.width
+                text: root.draftLastFmApiKey.trim() && !/^[0-9a-f]{32}$/i.test(root.draftLastFmApiKey.trim())
+                  ? "Enter an API key with exactly 32 hexadecimal characters."
+                  : "Uses your public listening history and favorites. No login, password, or API secret is needed. Your API key is saved locally."
+                color: root.muted
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.caption
+                wrapMode: Text.WordWrap
+              }
+              Flow {
+                width: parent.width
+                spacing: Style.space(5)
+                Button {
+                  text: "Apply Last.fm"
+                  foreground: root.foreground
+                  enabled: root.service && (root.draftLastFmApiKey.trim() === "" || /^[0-9a-f]{32}$/i.test(root.draftLastFmApiKey.trim()))
+                  onClicked: {
+                    root.service.persistSettings({ lastFmUsername: root.draftLastFmUsername.trim(), lastFmApiKey: root.draftLastFmApiKey.trim() })
+                    root.syncDraftSettings()
+                  }
+                }
+                Button {
+                  text: "Get an API key"
+                  foreground: root.foreground
+                  onClicked: Quickshell.execDetached(["xdg-open", "https://www.last.fm/api/account/create"])
+                }
+                Button {
+                  text: "Clear local discovery data"
+                  foreground: root.foreground
+                  enabled: root.service && root.service.discovery.storeReady
+                  onClicked: if (root.service) root.service.discovery.clearHistory()
+                }
               }
             }
 

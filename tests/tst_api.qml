@@ -556,10 +556,39 @@ TestCase {
 
     compare(Api.searchScope("home", null, null, "artists", "tracks").label,
       "Top artists")
+    compare(Api.searchScope("home", null, null, "albums", "tracks").label,
+      "Top albums")
     compare(Api.searchScope("library", null, null, "recent", "albums").label,
       "Saved albums")
     verify(!Api.searchScope("search", null, null, "recent", "tracks").available)
     verify(!Api.searchScope("devices", null, null, "recent", "tracks").available)
+  }
+
+  function test_topAlbums_ranksDistinctSongsAndPreservesAlbumMetadata() {
+    var first = { type: "album", id: "first", name: "First", imageUrl: "cover" }
+    var second = { type: "album", id: "second", name: "Second" }
+    var third = { type: "album", id: "third", name: "Third" }
+    var tracks = [
+      { id: "one", albumItem: first },
+      { id: "two", albumItem: second },
+      { id: "three", albumItem: third },
+      { id: "four", albumItem: second },
+      { id: "one", albumItem: first },
+      { id: "five", albumItem: third },
+      null,
+      { id: "missing" },
+      { id: "invalid", albumItem: { type: "album" } }
+    ]
+    var before = JSON.stringify(tracks)
+    var albums = Api.topAlbumsFromTracks(tracks)
+    compare(albums.length, 3)
+    compare(albums[0].id, "second")
+    compare(albums[1].id, "third")
+    compare(albums[2].id, "first")
+    compare(albums[2].imageUrl, "cover")
+    compare(JSON.stringify(tracks), before)
+    compare(Api.topAlbumsFromTracks([]).length, 0)
+    compare(Api.topAlbumsFromTracks(null).length, 0)
   }
 
   function test_universalSearchVisibility_isExplicitAndHiddenFromDevices() {

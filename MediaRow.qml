@@ -77,7 +77,8 @@ BorderSurface {
 
   width: parent ? parent.width : implicitWidth
   implicitWidth: Style.space(420)
-  implicitHeight: root.artworkEnabled ? Style.space(66) : Style.space(44)
+  implicitHeight: (root.artworkEnabled ? Style.space(66) : Style.space(44))
+    + (root.itemData && root.itemData.discoveryReason ? Style.space(20) : 0)
   height: implicitHeight
   radius: Style.cornerRadius
   color: selected || reorderDragging
@@ -242,6 +243,16 @@ BorderSurface {
         onArtistRequested: function(item) { root.artistRequested(item) }
         onAlbumRequested: function(item) { root.albumRequested(item) }
         onContextRequested: function(item) { root.openRequested(item) }
+      }
+      Text {
+        width: parent.width
+        visible: !!root.itemData && !!root.itemData.discoveryReason
+        text: root.itemData ? String(root.itemData.discoveryReason || "") : ""
+        textFormat: Text.PlainText
+        color: root.muted
+        font.family: root.fontFamily
+        font.pixelSize: Style.font.caption
+        elide: Text.ElideRight
       }
     }
 

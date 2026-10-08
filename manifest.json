@@ -5,7 +5,7 @@
   "version": "1.0.4",
   "author": "QuickshellSpotify",
   "license": "MIT",
-  "description": "Spotify in Quickshell with all the features you need\u2014using about 60 MB of memory versus roughly 950 MB for the official client.",
+  "description": "A lightweight Spotify player for Omarchy with Hidden Gems: deeper music discovery and strict Spotify monthly listener ceilings.",
   "kinds": [
     "service",
     "bar-widget",
@@ -19,7 +19,7 @@
   },
   "barWidget": {
     "displayName": "Omarchy Spotify",
-    "description": "Spotify in Quickshell with all the features you need\u2014using about 60 MB of memory versus roughly 950 MB for the official client.",
+    "description": "A lightweight Spotify player for Omarchy with Hidden Gems: deeper music discovery and strict Spotify monthly listener ceilings.",
     "category": "Media",
     "aliases": [
       "spotify",
@@ -45,7 +45,11 @@
       "fixedBarWidth": "Off",
       "audioQuality": "320 kbps",
       "showArtwork": "On",
-      "clientId": ""
+      "clientId": "",
+      "lastFmUsername": "",
+      "lastFmApiKey": "",
+      "discoveryObscurity": "Obscure",
+      "discoveryAdventure": "Balanced"
     },
     "schema": [
       {
@@ -218,6 +222,43 @@
         "label": "Spotify Developer app client ID",
         "defaultValue": "",
         "description": "Optional personal Spotify Developer app client ID, with its own quota. Empty keeps the plugin's client. A valid 32-hex ID is required. Changing it clears the current session and requires authorization for your app."
+      },
+      {
+        "key": "lastFmUsername",
+        "type": "string",
+        "label": "Last.fm username",
+        "defaultValue": "",
+        "description": "Use your public scrobbles and favorites to find hidden gems. No Last.fm login is required."
+      },
+      {
+        "key": "lastFmApiKey",
+        "type": "string",
+        "label": "Last.fm API key",
+        "defaultValue": "",
+        "description": "Application API key for public read methods. Stored locally; no API secret or password is needed."
+      },
+      {
+        "key": "discoveryObscurity",
+        "type": "enum",
+        "label": "Discovery obscurity",
+        "defaultValue": "Obscure",
+        "options": [
+          "Obscure",
+          "Underground",
+          "Deep underground"
+        ],
+        "description": "Strict Spotify monthly listener ceilings: 200,000 / 50,000 / 10,000. Unknown counts are excluded."
+      },
+      {
+        "key": "discoveryAdventure",
+        "type": "enum",
+        "label": "Discovery adventure",
+        "defaultValue": "Balanced",
+        "options": [
+          "Close",
+          "Balanced",
+          "Adventurous"
+        ]
       }
     ]
   }

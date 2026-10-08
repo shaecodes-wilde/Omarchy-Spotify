@@ -22,8 +22,8 @@ cp "$source_root/"*.qml "$source_root/"*.js "$test_root/app/plugin/"
 cp -r /usr/share/omarchy/shell/Commons /usr/share/omarchy/shell/Ui "$test_root/app/"
 cp "$source_root/tests/integration/AppSmoke.qml" "$test_root/app/shell.qml"
 if [[ -z ${WAYLAND_DISPLAY:-} ]]; then
-  # Service/authentication tests still use real Quickshell without a compositor.
-  sed -i '/Plugin.Panel {/d; /Plugin.BarWidget {/d; /panel.primaryNavigationItems()/,+1d' "$test_root/app/shell.qml"
+  # The full panel can load offscreen; the bar widget requires a compositor.
+  sed -i '/Plugin.BarWidget {/d' "$test_root/app/shell.qml"
   app_platform=offscreen
 else
   app_platform=wayland
@@ -41,3 +41,34 @@ if rg -i 'ReferenceError|TypeError|binding loop|Cannot assign|Unable to assign|F
   exit 1
 fi
 echo 'Quickshell app smoke test passed.'
+
+cp "$source_root/tests/integration/DiscoveryPipeline.qml" "$test_root/app/shell.qml"
+env -u WAYLAND_DISPLAY QT_QPA_PLATFORM=offscreen QT_QPA_PLATFORMTHEME=generic NO_AT_BRIDGE=1 XDG_STATE_HOME="$test_root/state" \
+  timeout 15s dbus-run-session -- qs --no-color -p "$test_root/app" > "$test_root/discovery-output" 2>&1 || {
+  cat "$test_root/discovery-output"
+  exit 1
+}
+rg -q DISCOVERY_PIPELINE_PASS "$test_root/discovery-output" || {
+  cat "$test_root/discovery-output"
+  exit 1
+}
+if rg -i 'ReferenceError|TypeError|binding loop|Cannot assign|Unable to assign|Failed to load configuration' "$test_root/discovery-output"; then
+  exit 1
+fi
+echo 'Quickshell discovery pipeline integration passed.'
+
+cp "$source_root/tests/integration/DiscoveryPersistence.qml" "$test_root/app/shell.qml"
+env -u WAYLAND_DISPLAY QT_QPA_PLATFORM=offscreen QT_QPA_PLATFORMTHEME=generic NO_AT_BRIDGE=1 XDG_STATE_HOME="$test_root/state" \
+  timeout 15s dbus-run-session -- qs --no-color -p "$test_root/app" > "$test_root/persistence-output" 2>&1 || {
+  cat "$test_root/persistence-output"
+  exit 1
+}
+rg -q DISCOVERY_PERSISTENCE_PASS "$test_root/persistence-output" || {
+  cat "$test_root/persistence-output"
+  exit 1
+}
+[[ $(stat -c %a "$test_root/state/persistence/discovery") == 700 ]]
+if rg -i 'ReferenceError|TypeError|binding loop|Cannot assign|Unable to assign|Failed to load configuration' "$test_root/persistence-output"; then
+  exit 1
+fi
+echo 'Quickshell discovery persistence integration passed.'

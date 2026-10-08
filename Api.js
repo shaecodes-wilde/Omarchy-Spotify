@@ -218,8 +218,8 @@ function safeApiUrl(path) {
 function redact(value) {
   var text = String(value || "")
   text = text.replace(/(authorization\s*:\s*bearer\s+)[^\s]+/ig, "$1<redacted>")
-  text = text.replace(/(^|[?&\s])((?:code|access_token|refresh_token|code_verifier|client_secret|password)=)[^&#\s]+/ig, "$1$2<redacted>")
-  text = text.replace(/("(?:access_token|refresh_token|code|code_verifier|client_secret|password)"\s*:\s*")[^"]+/ig, "$1<redacted>")
+  text = text.replace(/(^|[?&\s])((?:code|access_token|refresh_token|code_verifier|client_secret|api_key|lastFmApiKey|password)=)[^&#\s]+/ig, "$1$2<redacted>")
+  text = text.replace(/("(?:access_token|refresh_token|code|code_verifier|client_secret|api_key|lastFmApiKey|password)"\s*:\s*")[^"]+/ig, "$1<redacted>")
   return text
 }
 
@@ -1374,9 +1374,11 @@ function searchScope(tab, detailItem, selectedPlaylist, homeType, libraryType) {
     key = "playlist:" + String(item.uri || item.id || "")
   } else if (area === "home") {
     var homeLabels = {
+      gems: "Hidden gems",
       recent: "Recently played",
       tracks: "Top songs",
-      artists: "Top artists"
+      artists: "Top artists",
+      albums: "Top albums"
     }
     var selectedHome = String(homeType || "recent")
     label = homeLabels[selectedHome] || "For you"
@@ -1892,6 +1894,35 @@ function normalizeContext(value, imageWidth) {
     externalUrl: item.external_urls && item.external_urls.spotify
       ? String(item.external_urls.spotify) : ""
   }
+}
+
+// Spotify exposes top tracks and artists. Rank their albums by the number
+// of distinct top tracks, breaking ties by the highest-ranked track.
+function topAlbumsFromTracks(tracks) {
+  var source = arrayValues(tracks)
+  var albums = ({})
+  var seenTracks = ({})
+  var ranked = []
+  for (var i = 0; i < source.length; i++) {
+    var track = source[i]
+    var album = track && track.albumItem
+    if (!album || album.type !== "album" || !(album.id || album.uri)) continue
+    var trackKey = track.id || track.uri
+    if (trackKey) {
+      if (seenTracks["$" + trackKey]) continue
+      seenTracks["$" + trackKey] = true
+    }
+    var key = "$" + String(album.id || album.uri)
+    var entry = albums[key]
+    if (!entry) {
+      entry = { album: album, count: 0, firstRank: i }
+      albums[key] = entry
+      ranked.push(entry)
+    }
+    entry.count++
+  }
+  ranked.sort(function(a, b) { return b.count - a.count || a.firstRank - b.firstRank })
+  return ranked.map(function(entry) { return entry.album })
 }
 
 function normalizePlaylist(value, imageWidth) {

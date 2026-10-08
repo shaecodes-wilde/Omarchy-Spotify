@@ -1,22 +1,70 @@
-# Omarchy Spotify
+# Omarchy Spotify · Hidden Gems
 
-**Spotify in Quickshell—not Chromium.**
+Find small artists connected to the music you love, right inside Omarchy.
 
-Omarchy Spotify brings the Spotify experience you already know into a fast,
-beautiful Omarchy plugin. It uses about **60 MB of RAM** instead of roughly
-**950 MB** for the Spotify desktop client, follows your active Omarchy theme,
-and keeps your music close with an integrated mini player.
+This is a discovery-focused fork of [stappmus/Omarchy-Spotify](https://github.com/stappmus/Omarchy-Spotify).
+It keeps the upstream Quickshell player, themed mini-player, library, playlists,
+Spotify Connect playback, keyboard controls, and Omasing integration, and adds
+**Hidden Gems** for finding obscure music.
 
-Pair it with **Omasing** and lyrics for the song you are playing are fetched
-for you, ready when you want them.
+## What this fork adds
+
+- **Obscure means a real audience ceiling.** Obscure admits artists with fewer
+  than 200,000 Spotify monthly listeners. Underground lowers that to 50,000,
+  and Deep underground to 10,000. Counts equal to a ceiling are excluded.
+- **A feed that actively looks for tiny artists.** Obscure aims for eight picks
+  below 10,000 listeners, eight between 10,000 and 50,000, and four between
+  50,000 and 200,000. Missing groups are filled with other eligible artists;
+  the ceiling is never raised just to fill the list.
+- **Explore beyond the obvious neighbours.** Last.fm listening history seeds
+  a wider artist-similarity search. Balanced and Adventurous modes then walk
+  outward through verified small artists to uncover more distant connections.
+- **More artists, fewer repeats.** Each feed has up to 20 tracks, with one pick
+  per artist. Rotating seeds draw from recent and long-term listening; familiar
+  artists and picks shown within 30 days receive lower ranking scores.
+- **Understand every recommendation.** Each pick shows its connection to your
+  listening and its verified Spotify monthly listener count. A mainstream
+  featured artist cannot slip past the audience ceiling.
+- **Steer your own discoveries.** Use More like this to influence future seeds,
+  or Less like this to hide a track. Feedback stays local to the plugin.
+- **No extra music-data subscription.** Spotify counts come from public artist
+  pages and are cached for 24 hours. You supply your own Last.fm username and
+  application API key; this repository includes no personal credentials.
+
+The feed ranks metadata and listening connections; it does not analyze audio
+or train a model. Last.fm listener counts never substitute for Spotify monthly
+listeners. Unverified counts stay out of the feed.
 
 ## Install
 
 ```bash
-omarchy plugin add https://github.com/stappmus/Omarchy-Spotify.git --enable
+omarchy plugin add https://github.com/shaecodes-wilde/Omarchy-Spotify.git --enable
 ```
 
-Requires Omarchy 4 and a personal Spotify Premium account.
+Requires Omarchy 4 and a personal Spotify Premium account. Hidden Gems also
+needs a Last.fm listening profile and your own [Last.fm application API key](https://www.last.fm/api/account/create).
+Playback does not depend on setting up Last.fm.
+
+### Enable Hidden Gems
+
+1. Open the player’s **Settings → Last.fm · Hidden gems**.
+2. Enter your Last.fm username and application API key, then select **Apply Last.fm**.
+3. Open **For you → Hidden gems**. Choose your obscurity and adventure levels,
+   then select **Refresh**.
+
+| Obscurity | Strict Spotify monthly listener ceiling |
+| --- | ---: |
+| Obscure (default) | <200,000 |
+| Underground | <50,000 |
+| Deep underground | <10,000 |
+
+**Close** stays with direct artist connections. **Balanced** and **Adventurous**
+search farther; Adventurous favours less familiar similarity connections.
+A first uncached search can take several minutes. A strict tier may produce
+fewer than 20 results, and a listener check that fails stays unverified.
+
+See the [Hidden Gems guide](docs/HIDDEN_GEMS.md) for the discovery process,
+privacy details, limits, and troubleshooting.
 
 ## Why you will love it
 
@@ -235,3 +283,9 @@ Omarchy Spotify is an independent project and is not affiliated with Spotify.
 Spotify is a trademark of Spotify AB.
 
 Licensed under the [MIT License](LICENSE).
+
+## Hidden Gems documentation
+
+Read the [Hidden Gems guide](docs/HIDDEN_GEMS.md) for the complete algorithm,
+local data handling, and practical limits. The fork retains the upstream
+[MIT license](LICENSE) and credits the original Omarchy Spotify project.
