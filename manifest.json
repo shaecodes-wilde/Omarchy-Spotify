@@ -5,7 +5,7 @@
   "version": "1.0.4",
   "author": "QuickshellSpotify",
   "license": "MIT",
-  "description": "A lightweight Spotify player for Omarchy with Hidden Gems: deeper music discovery and strict Spotify monthly listener ceilings.",
+  "description": "A lightweight Spotify player for Omarchy with Hidden Gems: deeper music discovery and strict Last.fm total listener ceilings.",
   "kinds": [
     "service",
     "bar-widget",
@@ -19,7 +19,7 @@
   },
   "barWidget": {
     "displayName": "Omarchy Spotify",
-    "description": "A lightweight Spotify player for Omarchy with Hidden Gems: deeper music discovery and strict Spotify monthly listener ceilings.",
+    "description": "A lightweight Spotify player for Omarchy with Hidden Gems: deeper music discovery and strict Last.fm total listener ceilings.",
     "category": "Media",
     "aliases": [
       "spotify",
@@ -247,7 +247,7 @@
           "Underground",
           "Deep underground"
         ],
-        "description": "Strict Spotify monthly listener ceilings: 200,000 / 50,000 / 10,000. Unknown counts are excluded."
+        "description": "Strict Last.fm total listener ceilings: 200,000 / 50,000 / 10,000. Unknown counts are excluded."
       },
       {
         "key": "discoveryAdventure",

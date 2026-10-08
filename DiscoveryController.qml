@@ -67,7 +67,7 @@ Item {
 
   LastFmApi { id: lastFm; apiKey: root.apiKey; now: root.now }
   readonly property alias provider: lastFm
-  SpotifyAudience { id: audience; now: root.now }
+  LastFmAudience { id: audience; api: lastFm; now: root.now }
   readonly property alias audienceProvider: audience
 
   onScopeChanged: reset(true)
@@ -130,14 +130,14 @@ Item {
     if (!scope || storeReady) return
     var record = null
     try { record = JSON.parse(raw) } catch (error) {}
-    if (record && [1,2].indexOf(record.version) >= 0 && record.scope === scope) {
+    if (record && [1,2,3].indexOf(record.version) >= 0 && record.scope === scope) {
       history = Discovery.boundedMap(record.history, 5000)
       feedback = Discovery.boundedMap(record.feedback, 2000)
       shown = Discovery.boundedMap(record.shown, 1000)
       matches = Discovery.boundedMap(record.matches, 200)
       loadedAt = Discovery.number(record.loadedAt)
       loadedFingerprint = String(record.fingerprint || "")
-      audience.cache = Discovery.boundedMap(record.audience,400)
+      audience.cache = record.version === 3 ? Discovery.boundedMap(record.audience,400) : ({})
       shownArtists = Discovery.boundedMap(record.shownArtists,1000)
       seedRotation = Discovery.number(record.seedRotation)
       items = loadedFingerprint === fingerprint ? Discovery.list(record.items).filter(function(item) {
@@ -146,7 +146,7 @@ Item {
       if (loadedFingerprint !== fingerprint || items.length !== Discovery.list(record.items).length) loadedAt = 0
       importedCount = Discovery.number(record.importedCount)
       historyLimited = record.historyLimited === true
-      warning = String(record.warning || "")
+      warning = loadedFingerprint === fingerprint ? String(record.warning || "") : ""
     }
     storeReady = true
     if (requested) ensure(forceRequested)
@@ -158,7 +158,7 @@ Item {
 
   function writeState() {
     if (!storeReady || !scope || !directoryReady) return
-    stateFile.setText(JSON.stringify({ version: 2, scope: scope, items: items,
+    stateFile.setText(JSON.stringify({ version: 3, scope: scope, items: items,
       history: Discovery.boundedMap(history,5000), feedback: Discovery.boundedMap(feedback,2000),
       shown: Discovery.boundedMap(shown,1000), matches: Discovery.boundedMap(matches,200),
       audience: Discovery.boundedMap(audience.cache,400), shownArtists: Discovery.boundedMap(shownArtists,1000),
@@ -290,7 +290,7 @@ Item {
     var pool = candidateArtists.filter(function(row) { return !seeds[Discovery.artistKey(row.name)] })
     verificationQueue = Discovery.explorationOrder(pool,checkedArtists,seedArtists,seedRotation)
       .slice(0,Math.min(limit,artistBudget-verificationCount))
-    message = "Checking Spotify monthly listeners · " + verificationCount + "/" + artistBudget + "…"
+    message = "Checking Last.fm total listeners · " + verificationCount + "/" + artistBudget + "…"
     verifyArtist(0,token,finalPass)
   }
 
@@ -308,29 +308,33 @@ Item {
     var artist = verificationQueue[index]
     checkedArtists[Discovery.artistKey(artist.name)] = true
     verificationCount++
-    message = "Checking Spotify monthly listeners · " + verificationCount + "/" + artistBudget + "…"
-    var quote = String(artist.name).replace(/["\\]/g," ")
-    artistLookupCount++
-    spotifyHandle = host.api.request("GET","/search",{ q: 'artist:"'+quote+'"', type: "artist", limit: 10 },null,
-      function(status,payload,error) {
-        if (!root || token !== root.generation) return
-        root.spotifyHandle = null
-        if (error) { root.fail("Spotify could not search discovery artists. Try Refresh later.",token); return }
-        var match = Discovery.spotifyArtist(artist.name,payload && payload.artists && payload.artists.items)
-        if (!match) { root.unknownCounts++; root.verifyArtist(index+1,token,finalPass); return }
-        audience.request(match.id,function(record,audienceError,reason) {
+    message = "Checking Last.fm total listeners · " + verificationCount + "/" + artistBudget + "…"
+    // Use Last.fm to filter the full candidate pool first. Only eligible
+    // artists need Spotify identity/catalog lookups.
+    audience.request(artist.name,function(record,audienceError,reason) {
+      if (!root || token !== root.generation) return
+      if (audienceError) { root.fail(audienceError,token); return }
+      if (!record || !Discovery.eligible(record.listeners,root.obscurity)) {
+        if (!record) root.unknownCounts++
+        root.verifyArtist(index+1,token,finalPass); return
+      }
+      var quote = String(artist.name).replace(/["\\]/g," ")
+      root.artistLookupCount++
+      root.spotifyHandle = host.api.request("GET","/search",{ q: 'artist:"'+quote+'"', type: "artist", limit: 10 },null,
+        function(status,payload,error) {
           if (!root || token !== root.generation) return
-          if (audienceError) { root.fail(audienceError,token); return }
-          if (record && Discovery.eligible(record.listeners,root.obscurity)) {
-            var copy = Object.assign({},artist,{ spotifyArtistId: match.id, monthlyListeners: record.listeners,
-              listenerCheckedAt: record.at, familiar: !!root.familiarArtists[Discovery.artistKey(artist.name)],
-              recentlyShown: !!root.shownArtists[match.id] && root.now()-root.shownArtists[match.id] < 30*86400000 })
-            if (!root.verifiedArtists.some(function(row) { return row.spotifyArtistId === match.id }))
-              root.verifiedArtists = root.verifiedArtists.concat([copy])
-          } else if (!record) root.unknownCounts++
+          root.spotifyHandle = null
+          if (error) { root.fail("Spotify could not match discovery artists. Try Refresh later.",token); return }
+          var match = Discovery.spotifyArtist(artist.name,payload && payload.artists && payload.artists.items)
+          if (!match) { root.unknownCounts++; root.verifyArtist(index+1,token,finalPass); return }
+          var copy = Object.assign({},artist,{ spotifyArtistId: match.id, lastFmListeners: record.listeners,
+            listenerCheckedAt: record.at, familiar: !!root.familiarArtists[Discovery.artistKey(artist.name)],
+            recentlyShown: !!root.shownArtists[match.id] && root.now()-root.shownArtists[match.id] < 30*86400000 })
+          if (!root.verifiedArtists.some(function(row) { return row.spotifyArtistId === match.id }))
+            root.verifiedArtists = root.verifiedArtists.concat([copy])
           root.verifyArtist(index+1,token,finalPass)
-        })
-      },{ priority: "background", retryRateLimit: false })
+        },{ priority: "background", retryRateLimit: false })
+    })
   }
 
   function readDeepNeighbours(index,token) {
@@ -351,7 +355,7 @@ Item {
     // Reserve space for each audience band before filling remaining slots.
     var selected = [], used = {}, bands = [0,0,0]
     ranked.forEach(function(row) {
-      var band = Discovery.audienceBand(row.monthlyListeners)
+      var band = Discovery.audienceBand(row.lastFmListeners)
       if (bands[band] < 12) { selected.push(row); used[row.spotifyArtistId] = true; bands[band]++ }
     })
     ranked.forEach(function(row) {
@@ -406,13 +410,13 @@ Item {
 
   function validStoredItem(item) {
     if (!item || item.type !== "track" || !item.uri || !item.discoverySpotifyArtistId
-        || !Discovery.eligible(item.discoveryMonthlyListeners,obscurity)
+        || !Discovery.eligible(item.discoveryLastFmListeners,obscurity)
         || !item.artists || !item.artists.length) return false
     if (!item.artists.some(function(artist) { return artist.id === item.discoverySpotifyArtistId })) return false
     return item.artists.every(function(artist) {
-      var record = audience.cache[artist.id]
-      return audience.fresh(record,artist.id) && Discovery.eligible(record.listeners,root.obscurity)
-        && (artist.id !== item.discoverySpotifyArtistId || record.listeners === item.discoveryMonthlyListeners)
+      var record = audience.cache[Discovery.artistKey(artist.name)]
+      return audience.fresh(record,artist.name) && Discovery.eligible(record.listeners,root.obscurity)
+        && (artist.id !== item.discoverySpotifyArtistId || record.listeners === item.discoveryLastFmListeners)
     })
   }
 
@@ -424,12 +428,12 @@ Item {
     function next(index) {
       if (!root || token !== root.generation) return
       if (index >= item.artists.length) { root.accept(candidate,item); done(); return }
-      var id = item.artists[index].id
-      if (!audience.fresh(audience.cache[id],id)) {
+      var artistName = item.artists[index].name
+      if (!audience.fresh(audience.cache[Discovery.artistKey(artistName)],artistName)) {
         if (root.verificationCount >= root.artistBudget) { done(); return }
         root.verificationCount++
       }
-      audience.request(id,function(record,error,reason) {
+      audience.request(artistName,function(record,error,reason) {
         if (!root || token !== root.generation) return
         if (error) { root.fail(error,token); return }
         if (!record || !Discovery.eligible(record.listeners,root.obscurity)) { done(); return }
@@ -443,7 +447,7 @@ Item {
     if (!item || resolved.some(function(row) { return row.uri === item.uri })) return
     var copy = Object.assign({},item,{ discoveryKey: candidate.key,
       discoveryArtist: candidate.artist, discoveryReason: Discovery.explanation(candidate),
-      discoverySeed: candidate.seed, discoveryMonthlyListeners: candidate.monthlyListeners,
+      discoverySeed: candidate.seed, discoveryLastFmListeners: candidate.lastFmListeners,
       discoverySpotifyArtistId: candidate.spotifyArtistId, discoveryListenerCheckedAt: candidate.listenerCheckedAt,
       discoveryScore: candidate.score })
     resolved = resolved.concat([copy])
@@ -463,10 +467,10 @@ Item {
     shownArtists = Discovery.boundedMap(nextArtists,1000)
     seedRotation = (seedRotation + 6) % 1000000
     message = items.length ? "" : "No verified matches below " + Discovery.listenerCeiling(obscurity).toLocaleString()
-      + " Spotify monthly listeners. Try more adventure or Refresh."
+      + " Last.fm total listeners. Try more adventure or Refresh."
     warning = historyLimited ? "Filtered against the latest 5,000 scrobbles within 90 days; older plays may reappear."
       : "Filtered against your imported 90-day history and up to 100 loved tracks."
-    warning = "Spotify monthly listeners checked within 24 hours · " + verificationCount + " artists checked. " + warning
+    warning = "Last.fm total listeners checked within 24 hours · " + verificationCount + " artists checked. " + warning
     if (unknownCounts) warning += " " + unknownCounts + " artists skipped because identity or count could not be verified."
     save()
   }

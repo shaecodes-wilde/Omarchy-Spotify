@@ -21,7 +21,8 @@ ShellRoot {
     printErrors: false
     onLoaded: {
       var saved = JSON.parse(text())
-      if (saved.scope !== "profile|account-one" || saved.history["$heard"] !== 1800000000
+      if (saved.version !== 3 || saved.scope !== "profile|account-one" || saved.history["$heard"] !== 1800000000
+          || saved.audience["$a"].source !== "lastfm-artist-total" || saved.audience["$a"].listeners !== 123
           || saved.feedback["$feedback"].rating !== "more" || text().indexOf(fakeHost.settings.lastFmApiKey) >= 0)
         throw new Error("Discovery persistence content or credential isolation failed")
       fakeHost.currentUserId = "account-two"
@@ -42,16 +43,20 @@ ShellRoot {
       if (tests.step === 0) {
         discovery.history = { "$heard": 1800000000 }
         discovery.feedback = { "$feedback": { artist: "A", rating: "more", at: Date.now() } }
+        discovery.audienceProvider.cache = { "$a": { artistKey: "$a", name: "A", listeners: 123,
+          at: Date.now(), source: "lastfm-artist-total" } }
         discovery.writeState()
         tests.step = 1
         reader.path = discovery.storagePath
       } else if (tests.step === 2) {
-        if (Object.keys(discovery.history).length || Object.keys(discovery.feedback).length)
+        if (Object.keys(discovery.history).length || Object.keys(discovery.feedback).length
+            || Object.keys(discovery.audienceProvider.cache).length)
           throw new Error("Different account inherited private discovery state")
         fakeHost.currentUserId = "account-one"
         tests.step = 3
       } else if (tests.step === 3) {
-        if (discovery.history["$heard"] !== 1800000000 || discovery.feedback["$feedback"].rating !== "more")
+        if (discovery.history["$heard"] !== 1800000000 || discovery.feedback["$feedback"].rating !== "more"
+            || !discovery.audienceProvider.fresh(discovery.audienceProvider.cache["$a"], "A"))
           throw new Error("Original account did not restore its cache")
         console.log("DISCOVERY_PERSISTENCE_PASS")
         Qt.quit()

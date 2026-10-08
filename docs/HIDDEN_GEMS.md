@@ -1,7 +1,7 @@
 # Hidden Gems: finding obscure music
 
 Hidden Gems is this fork’s discovery feature. It uses your Last.fm listening
-profile to find connected artists, verifies their Spotify monthly audience,
+profile to find connected artists, verifies their total Last.fm listener count,
 and matches playable tracks to Spotify’s catalog. The goal is to introduce
 small artists that fit your taste while making room for deeper exploration.
 
@@ -19,11 +19,17 @@ never commit it to a source checkout or include it in an issue report.
 
 ## Choose how obscure and how adventurous
 
-| Mode | Eligible Spotify monthly listeners |
+| Mode | Eligible total Last.fm listeners |
 | --- | ---: |
 | Obscure | 0–199,999 |
 | Underground | 0–49,999 |
 | Deep underground | 0–9,999 |
+
+Last.fm’s [artist.getInfo API](https://www.last.fm/api/show/artist.getInfo)
+provides total listeners: Last.fm accounts that have listened to an artist over
+time. It does not provide monthly unique listeners. These counts describe the
+Last.fm community and are not comparable to Spotify monthly listener numbers.
+They measure accumulated reach, not recent popularity.
 
 These are eligibility rules, not ranking bonuses. An artist at exactly 200,000
 listeners does not qualify for Obscure. Missing counts, rounded descriptions,
@@ -54,10 +60,11 @@ Adventure is separate from audience size:
    adventure modes explore additional branches, then follow verified small
    artists outward. Candidate ordering gives different seed paths a turn within
    the lookup budget.
-4. **Verify Spotify audience.** Resolve an exact artist-name match to a Spotify
-   artist ID. Read the exact monthly listener label from that artist’s public
-   Spotify page. Cache verified counts by artist ID for 24 hours. Last.fm counts
-   and Spotify followers/popularity scores are never used as replacements.
+4. **Verify Last.fm listeners.** Read `stats.listeners` from `artist.getInfo`
+   with autocorrection disabled, requiring an exact normalized artist-name
+   match. Cache verified counts by artist name for 24 hours. Only artists below
+   the ceiling proceed to exact Spotify artist-ID matching. Spotify followers
+   and popularity scores never determine eligibility.
 5. **Rank the eligible artists.** Combine connection strength, similarity fit,
    absolute audience size, and connections to multiple seeds. Penalize familiar
    artists and artists shown within 30 days.
@@ -68,7 +75,7 @@ Adventure is separate from audience size:
 7. **Check collaborators and choose the feed.** Verify all credited artists,
    apply the audience mix, and show up to 20 tracks with one pick per artist.
 
-The explanation under each pick shows its connection path and Spotify monthly
+The explanation under each pick shows its connection path and total Last.fm
 listener count. **More like this** influences local ranking and future seeds.
 **Less like this · hide** hides that track. This feedback does not change
 Spotify’s own recommendation system.
@@ -77,8 +84,8 @@ Spotify’s own recommendation system.
 
 Your Last.fm key is masked in the settings UI and stored in your local Omarchy
 widget configuration. It is sent to Last.fm to make the public API requests;
-it is not included in discovery cache files or logged request URLs. Public
-Spotify page requests use no Spotify bearer token or private API endpoint.
+it is not included in discovery cache files or logged request URLs. Spotify
+requests use the existing catalog API connection to match playable recordings.
 
 History, feedback, previously shown picks, track matches, and audience evidence
 are kept under `$XDG_STATE_HOME/omarchy-spotify/discovery`, or
@@ -98,17 +105,16 @@ history, or desktop configuration.
 ## Practical limits and troubleshooting
 
 - **The first search can take several minutes.** Each run checks at most 120
-  candidate artist identities, with extra collaborator checks sharing the
-  audience-check budget, and makes at most 100 track searches. Last.fm requests
-  are paced; public Spotify page requests are serial with at least 500 ms
-  between uncached requests. Spotify catalog requests yield to interactive work.
-- **Counts are a checked snapshot.** Spotify audiences change. Evidence is
+  artist listener counts, with extra collaborator checks sharing that budget,
+  and makes at most 100 track searches. Last.fm requests are paced and share
+  the existing transport. Spotify catalog requests yield to interactive work.
+- **Counts are a checked snapshot.** Last.fm listener counts change. Evidence is
   accepted for 24 hours, and the status shows the freshness window. The plugin
   cannot guarantee a count stays below the ceiling between checks.
-- **Public page markup can change.** This is not an official Spotify monthly
-  listener API. If the exact count is missing or its format changes, the count
-  remains unknown. Network failures and rate limits stop the run with a visible
-  message; there is no automatic retry loop or weaker-metric fallback.
+- **Missing counts stay unknown.** Missing or malformed API counts and artist
+  name mismatches cannot establish eligibility. Network failures and rate limits
+  stop the run with a visible message; there is no automatic retry loop or
+  fallback to another audience metric. No Spotify artist-page scraping is used.
 - **A strict feed may be short.** Small artists may have sparse Last.fm metadata,
   an ambiguous name, no matching Spotify recording, or an oversized collaborator.
   Try another adventure level or Refresh to rotate the search. Fewer good,
@@ -122,16 +128,17 @@ history, or desktop configuration.
 - **Feeds refresh on demand.** Results are cached for 24 hours and refreshed on
   a later visit or with Refresh. There is no daily background polling.
 
-Older Balanced obscurity settings migrate to Obscure. Legacy feeds ranked by
-Last.fm audience are invalidated while preserving imported history and feedback.
+Older Balanced obscurity settings migrate to Obscure. Changing to total Last.fm
+listeners invalidates older feeds and Spotify count evidence while preserving
+imported history, feedback, and previous-pick records.
 
 ## Implementation and verification
 
 - `Discovery.js`: normalization, seed selection, graph merging, ranking,
-  Spotify matching, exact audience parsing, and feed diversity.
+  Spotify matching, exact listener-count validation, and feed diversity.
 - `LastFmApi.qml`: public Last.fm read transport, pacing, caching, and cancellation.
-- `SpotifyAudience.qml`: public Spotify listener checks, daily caching, and
-  bounded requests without additional credentials or runtime dependencies.
+- `LastFmAudience.qml`: official Last.fm total listener checks, daily caching,
+  source validation, and cancellation through the shared Last.fm transport.
 - `DiscoveryController.qml`: orchestration, identity checks, account-scoped
   persistence, collaborator checks, and strict admission to the visible feed.
 

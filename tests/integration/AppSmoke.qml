@@ -69,7 +69,7 @@ ShellRoot {
     onTriggered: {
       var status = JSON.parse(panel.discoveryStatus())
       if (!status.available || status.apiKeyConfigured || status.homeType !== "gems"
-          || status.listenerMetric !== "Spotify monthly listeners" || status.listenerCeiling !== 200000)
+          || status.listenerMetric !== "Last.fm total listeners" || status.listenerCeiling !== 200000)
         throw new Error("Discovery diagnostics or home page did not load")
       console.log("APP_SMOKE_PASS")
       Qt.quit()

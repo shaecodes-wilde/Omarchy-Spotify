@@ -3,7 +3,7 @@
 ## Hidden Gems fork additions
 
 - Add For you → Hidden gems using Last.fm listening history and artist similarity.
-- Enforce Spotify monthly listener ceilings of <200,000, <50,000, and <10,000,
+- Enforce total Last.fm listener ceilings of <200,000, <50,000, and <10,000,
   including every credited artist on a track. Unknown and rounded counts do
   not qualify.
 - Expand a wider similarity pool, rotate seeds, and explore outward through
@@ -11,8 +11,11 @@
 - Aim for an 8/8/4 audience mix in Obscure mode and one pick per artist.
 - Explain recommendation paths and listener counts; add local More/Less feedback
   and stronger penalties for familiar or recently shown picks.
+- Use official Last.fm artist.getInfo counts with daily caching; remove Spotify
+  page scraping and skip Spotify artist searches for ineligible candidates.
+- Label counts as total Last.fm listeners, not monthly listeners.
 - Persist discovery history and verified audience data per account; invalidate
-  legacy Last.fm-ranked feeds without deleting imported history.
+  old feeds and Spotify audience caches without deleting history or feedback.
 - Add strict-ceiling, transport, feed, persistence, and account-switch tests.
 - Ship blank Last.fm settings and document credential handling.
 

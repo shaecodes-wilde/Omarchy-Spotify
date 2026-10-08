@@ -74,19 +74,27 @@ ShellRoot {
     if (query.method === "artist.getSimilar") return { similarartists: { artist: query.artist === "Seed"
       ? Object.keys(counts).filter(function(name) { return name !== "Deep find" }).map(function(name) { return {name:name,match:"0.8"} })
       : query.artist === "Zero" ? [{name:"Deep find",match:"0.7"}] : [] } }
-    if (query.method === "artist.getInfo") throw new Error("Last.fm audience must not substitute for Spotify monthly listeners")
+    if (query.method === "artist.getInfo") return {artist:{name:query.artist,stats:
+      counts[query.artist] === null ? {} : {listeners:String(counts[query.artist])}}}
     if (query.method === "artist.getTopTracks") return { toptracks: { track: [
       { name: "Heard" }, { name: "Loved" }, { name: "New one" }, { name: "New two" }, { name: "New three" } ] } }
     return { error: 6 }
   }
   function newRequest() {
     var xhr = { readyState: 0, status: 0, responseText: "", url: "", aborted: false,
-      open: function(method,url) { this.url=url },
+      open: function(method,url) {
+        if (url.indexOf("https://ws.audioscrobbler.com/2.0/?") !== 0) throw new Error("Unexpected page scraping request")
+        this.url=url
+      },
       abort: function() { this.aborted=true }, getResponseHeader: function() { return "" },
       send: function() {
         tests.lastFmCalls++
         var self = this
         if (tests.holdResponse) { tests.held = self; return }
+        if (self.url.indexOf("artist.getInfo") >= 0) {
+          tests.audienceCalls++
+          if (tests.holdAudience) { tests.heldAudience=self; return }
+        }
         Qt.callLater(function() { tests.complete(self) })
       }, onreadystatechange: null }
     return xhr
@@ -94,23 +102,6 @@ ShellRoot {
   function complete(xhr) {
     xhr.status=200; xhr.responseText=JSON.stringify(response(xhr.url)); xhr.readyState=XMLHttpRequest.DONE
     xhr.onreadystatechange()
-  }
-  function newAudienceRequest() {
-    return {readyState:0,status:0,responseText:"",url:"",aborted:false,onreadystatechange:null,
-      open:function(method,url) { this.url=url }, setRequestHeader:function(key,value) {},
-      getResponseHeader:function() { return "" }, abort:function() { this.aborted=true },
-      send:function() {
-        tests.audienceCalls++
-        var self=this
-        if (tests.holdAudience) { tests.heldAudience=self; return }
-        Qt.callLater(function() { tests.completeAudience(self) })
-      } }
-  }
-  function completeAudience(xhr) {
-    var id=xhr.url.split("/").pop(),name=Object.keys(counts).filter(function(name) { return artistId(name)===id })[0]
-    xhr.status=200; xhr.responseText='<link rel="canonical" href="'+xhr.url+'"/>'
-      + (counts[name] === null ? '' : '<div data-testid="monthly-listeners-label">'+counts[name]+' monthly listeners</div>')
-    xhr.readyState=XMLHttpRequest.DONE; xhr.onreadystatechange()
   }
   function init() {
     spotifySearches=0; lastFmCalls=0; holdResponse=false; held=null; audienceCalls=0; holdAudience=false; heldAudience=null
@@ -120,20 +111,18 @@ ShellRoot {
     controller=component.createObject(tests)
     controller.provider.paceMs=1
     controller.provider.xhrFactory=function() { return tests.newRequest() }
-    controller.audienceProvider.paceMs=1
-    controller.audienceProvider.xhrFactory=function() { return tests.newAudienceRequest() }
     controller.readState("")
   }
   function check(condition,message) { if (!condition) throw new Error(message) }
   function checkPipeline() {
     if (phase === 1) {
-      check(controller.items.length === 5 && controller.items.every(function(item) { return item.discoveryMonthlyListeners < 50000 }),"Underground ceiling failed")
+      check(controller.items.length === 5 && controller.items.every(function(item) { return item.discoveryLastFmListeners < 50000 }),"Underground ceiling failed")
       phase=2
       fakeHost.settings=Object.assign({},fakeHost.settings,{discoveryObscurity:"Deep underground"})
       completion.start(); return
     }
     if (phase === 2) {
-      check(controller.items.length === 3 && controller.items.every(function(item) { return item.discoveryMonthlyListeners < 10000 }),"Deep ceiling failed")
+      check(controller.items.length === 3 && controller.items.every(function(item) { return item.discoveryLastFmListeners < 10000 }),"Deep ceiling failed")
       phase=3
       controller.destroy(); init()
       holdAudience=true; controller.ensure(false)
@@ -142,8 +131,9 @@ ShellRoot {
     check(controller.items.length === 6,"Feed did not return six verified diverse matches: " + controller.items.length + " " + controller.message
       + " picks="+controller.items.map(function(item) { return item.discoveryArtist }).join(",")
       + " verified="+controller.verifiedArtists.map(function(item) { return item.name }).join(","))
-    check(controller.items.every(function(item) { return item.discoveryReason.indexOf("Spotify monthly listeners") >= 0
-      && item.discoveryMonthlyListeners < 200000 }),"Strict ceiling or explanation missing")
+    check(controller.artistLookupCount < controller.verificationCount,"Oversized/unknown artists consumed Spotify identity searches")
+    check(controller.items.every(function(item) { return item.discoveryReason.indexOf("Last.fm total listeners") >= 0
+      && item.discoveryLastFmListeners < 200000 }),"Strict ceiling or explanation missing")
     check(!controller.items.some(function(item) { return ["Ceiling","Unknown"].indexOf(item.discoveryArtist) >= 0 }),"Oversized/unknown artist leaked")
     check(controller.items.some(function(item) { return item.discoveryArtist === "Deep find" }),"Verified small artist did not open a deeper path")
     check(controller.items.filter(function(item) { return item.discoveryArtist === "Collab" })[0].name === "New three","Mainstream collaboration leaked")
@@ -186,15 +176,24 @@ ShellRoot {
       if (!tests.heldAudience) return
       stop()
       fakeHost.currentUserId="another-account"
-      tests.check(tests.heldAudience.aborted,"Account switch did not abort public audience request")
-      tests.completeAudience(tests.heldAudience)
+      tests.check(tests.heldAudience.aborted,"Account switch did not abort Last.fm audience request")
+      tests.complete(tests.heldAudience)
       tests.check(!tests.controller.items.length && !Object.keys(tests.controller.audienceProvider.cache).length,"Late audience response leaked")
       tests.controller.destroy()
       tests.controller=component.createObject(tests)
       tests.controller.readState(JSON.stringify({version:1,scope:"profile|another-account",loadedAt:tests.clock,
         fingerprint:"Underground|Close",items:[{type:"track",uri:"spotify:track:old"}],history:{"$old":42},feedback:{}}))
       tests.check(!tests.controller.items.length && !tests.controller.loadedAt && tests.controller.history["$old"]===42,
-        "Old Last.fm feed was not invalidated while preserving history")
+        "Legacy feed was not invalidated while preserving history")
+      tests.controller.destroy()
+      tests.controller=component.createObject(tests)
+      tests.controller.readState(JSON.stringify({version:2,scope:"profile|another-account",loadedAt:tests.clock,
+        fingerprint:"spotify-audience-v2|Obscure|Balanced",items:[{type:"track",uri:"spotify:track:old"}],
+        audience:{old:{source:"spotify-public-artist-page",listeners:1,at:tests.clock}},
+        history:{"$old":42},feedback:{"$like":{rating:"more",artist:"Small",at:tests.clock}}}))
+      tests.check(!tests.controller.items.length && !tests.controller.loadedAt && !Object.keys(tests.controller.audienceProvider.cache).length
+        && tests.controller.history["$old"]===42 && tests.controller.feedback["$like"].rating==="more",
+        "Spotify audience migration lost history/feedback or restored old counts")
       console.log("DISCOVERY_PIPELINE_PASS")
       Qt.quit()
     }

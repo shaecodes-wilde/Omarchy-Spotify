@@ -77,7 +77,7 @@ function mergeArtists(existing, rows, seed, secondDegree) {
     var relevance = similarity * seed.weight * (secondDegree ? 0.65 : 1)
     if (!map[key]) map[key] = { name: name, relevance: 0, similarity: 0,
       seed: seed.origin || seed.name, secondDegree: !!secondDegree, depth: depth,
-      path: (seed.path || [seed.name]).concat([name]), origins: [], monthlyListeners: null }
+      path: (seed.path || [seed.name]).concat([name]), origins: [], lastFmListeners: null }
     map[key].relevance += relevance
     var origin = seed.origin || seed.name
     if (map[key].origins.indexOf(origin) < 0) map[key].origins = map[key].origins.concat([origin])
@@ -97,10 +97,10 @@ function rankArtists(artists, obscurity, adventure, feedback) {
   var maxRelevance = Math.max.apply(Math, [0.001].concat(rows.map(function(row) { return row.relevance })))
   var adventurous = adventure === "Adventurous", close = adventure === "Close"
   return rows.filter(function(row) {
-    return eligible(row.monthlyListeners, obscurity) && (!close || !row.secondDegree)
+    return eligible(row.lastFmListeners, obscurity) && (!close || !row.secondDegree)
   }).map(function(row) {
     var similarityFit = adventurous ? 1 - Math.abs(row.similarity - 0.45) : row.similarity
-    var depthFit = 1 - Math.log(1 + row.monthlyListeners) / Math.log(1 + listenerCeiling(obscurity))
+    var depthFit = 1 - Math.log(1 + row.lastFmListeners) / Math.log(1 + listenerCeiling(obscurity))
     row.score = 0.5 * row.relevance / maxRelevance + 0.25 * similarityFit + 0.15 * depthFit
       + 0.1 * Math.min(1, list(row.origins).length / 3)
     if (row.familiar) row.score -= 0.2
@@ -122,7 +122,7 @@ function trackCandidates(artist, tracks, history, loved, feedback) {
       && !(feedback[key] && feedback[key].rating === "less")
   }).map(function(row, index) {
     return { artist: artist.name, name: text(row.name), key: trackKey(artist.name, row.name),
-      score: artist.score - index * 0.015, seed: artist.seed, monthlyListeners: artist.monthlyListeners,
+      score: artist.score - index * 0.015, seed: artist.seed, lastFmListeners: artist.lastFmListeners,
       spotifyArtistId: artist.spotifyArtistId, listenerCheckedAt: artist.listenerCheckedAt,
       path: artist.path, secondDegree: artist.secondDegree }
   })
@@ -165,8 +165,8 @@ function spotifyMatch(candidate, tracks) {
 function explanation(candidate) {
   var trail = list(candidate.path).slice(0, -1)
   var result = "Connected through " + (trail.length ? trail.join(" → ") : candidate.seed)
-  if (validCount(candidate.monthlyListeners))
-    result += " · " + candidate.monthlyListeners.toLocaleString() + " Spotify monthly listeners"
+  if (validCount(candidate.lastFmListeners))
+    result += " · " + candidate.lastFmListeners.toLocaleString() + " Last.fm total listeners"
   else result += " · listener count unknown"
   return result
 }
@@ -193,24 +193,17 @@ function spotifyArtist(name, artists) {
   return rows.length === 1 ? rows[0] : null
 }
 
-// Only exact counts from the artist's own labelled element qualify. Rounded
-// SEO descriptions (e.g. 199.9K) cannot prove eligibility near a ceiling.
-function parseAudience(html, artistId) {
-  if (!/^[A-Za-z0-9]{22}$/.test(artistId) || typeof html !== "string" || html.length > 2000000) return null
-  var canonical = html.match(/<link\b[^>]*rel=["']canonical["'][^>]*>/i)
-  if (!canonical) return null
-  var href = canonical[0].match(/href=["']([^"']+)["']/i)
-  if (!href || href[1] !== "https://open.spotify.com/artist/" + artistId) return null
-  var label = /<[^>]+\bdata-testid=["']monthly-listeners-label["'][^>]*>\s*([^<]+)</gi
-  var match, count = null
-  while ((match = label.exec(html))) {
-    var exact = match[1].trim().match(/^((?:\d{1,3}(?:,\d{3})+)|\d+)\s+monthly listeners$/i)
-    if (!exact) return null
-    var value = Number(exact[1].replace(/,/g, ""))
-    if (!validCount(value) || (count !== null && count !== value)) return null
-    count = value
+// Last.fm artist.getInfo exposes total listener accounts, not monthly
+// listeners. Empty/missing/malformed values must never become a zero count.
+function lastFmListenerCount(payload, artistName) {
+  var artist = payload && payload.artist
+  if (!artist || nameKey(artist.name) !== nameKey(artistName) || !nameKey(artistName)) return null
+  var value = artist.stats && artist.stats.listeners
+  if (typeof value === "string") {
+    if (!/^\d+$/.test(value.trim())) return null
+    value = Number(value.trim())
   }
-  return count
+  return validCount(value) ? value : null
 }
 
 // Give each listening seed a turn before spending the lookup budget. Smaller
@@ -244,11 +237,11 @@ function explorationOrder(artists, checked, seedNames, rotation) {
 function selectFeed(rows, obscurity, maximum) {
   var target = obscurity === "Deep underground" ? [20,0,0]
     : obscurity === "Underground" ? [12,8,0] : [8,8,4]
-  var sorted = list(rows).filter(function(row) { return eligible(row.discoveryMonthlyListeners,obscurity) })
+  var sorted = list(rows).filter(function(row) { return eligible(row.discoveryLastFmListeners,obscurity) })
     .sort(function(a,b) { return b.discoveryScore-a.discoveryScore || a.discoveryKey.localeCompare(b.discoveryKey) })
   var result = [], used = {}, counts = [0,0,0], max = maximum || 20
   function add(row, enforceTarget) {
-    var id = row.discoverySpotifyArtistId, band = audienceBand(row.discoveryMonthlyListeners)
+    var id = row.discoverySpotifyArtistId, band = audienceBand(row.discoveryLastFmListeners)
     if (!id || used[id] || result.length >= max || (enforceTarget && counts[band] >= target[band])) return
     used[id] = true; counts[band]++; result.push(row)
   }
@@ -268,4 +261,4 @@ function boundedMap(source, maximum) {
   return result
 }
 
-function settingsFingerprint(obscurity, adventure) { return "spotify-audience-v2|" + String(obscurity) + "|" + String(adventure) }
+function settingsFingerprint(obscurity, adventure) { return "lastfm-total-v3|" + String(obscurity) + "|" + String(adventure) }

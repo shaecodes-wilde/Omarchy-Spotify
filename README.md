@@ -10,7 +10,7 @@ Spotify Connect playback, keyboard controls, and Omasing integration, and adds
 ## What this fork adds
 
 - **Obscure means a real audience ceiling.** Obscure admits artists with fewer
-  than 200,000 Spotify monthly listeners. Underground lowers that to 50,000,
+  than 200,000 total Last.fm listeners. Underground lowers that to 50,000,
   and Deep underground to 10,000. Counts equal to a ceiling are excluded.
 - **A feed that actively looks for tiny artists.** Obscure aims for eight picks
   below 10,000 listeners, eight between 10,000 and 50,000, and four between
@@ -23,17 +23,18 @@ Spotify Connect playback, keyboard controls, and Omasing integration, and adds
   per artist. Rotating seeds draw from recent and long-term listening; familiar
   artists and picks shown within 30 days receive lower ranking scores.
 - **Understand every recommendation.** Each pick shows its connection to your
-  listening and its verified Spotify monthly listener count. A mainstream
+  listening and its verified total Last.fm listener count. An oversized
   featured artist cannot slip past the audience ceiling.
 - **Steer your own discoveries.** Use More like this to influence future seeds,
   or Less like this to hide a track. Feedback stays local to the plugin.
-- **No extra music-data subscription.** Spotify counts come from public artist
-  pages and are cached for 24 hours. You supply your own Last.fm username and
+- **No extra music-data subscription.** Counts come from Last.fm’s official
+  artist API and are cached for 24 hours. You supply your own Last.fm username and
   application API key; this repository includes no personal credentials.
 
 The feed ranks metadata and listening connections; it does not analyze audio
-or train a model. Last.fm listener counts never substitute for Spotify monthly
-listeners. Unverified counts stay out of the feed.
+or train a model. The metric counts Last.fm accounts that have listened to an
+artist over time; it is not a monthly listener count or a Spotify audience
+estimate. Unverified counts stay out of the feed.
 
 ## Install
 
@@ -52,7 +53,7 @@ Playback does not depend on setting up Last.fm.
 3. Open **For you → Hidden gems**. Choose your obscurity and adventure levels,
    then select **Refresh**.
 
-| Obscurity | Strict Spotify monthly listener ceiling |
+| Obscurity | Strict total Last.fm listener ceiling |
 | --- | ---: |
 | Obscure (default) | <200,000 |
 | Underground | <50,000 |

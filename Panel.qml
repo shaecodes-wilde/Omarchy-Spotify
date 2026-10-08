@@ -2099,10 +2099,10 @@ Item {
     return JSON.stringify({ available: true, username: feed.username,
       apiKeyConfigured: !!feed.apiKey, loading: feed.loading, message: feed.setupMessage || feed.message,
       importedScrobbles: feed.importedCount, recommendations: feed.items.length,
-      listenerMetric: "Spotify monthly listeners", listenerCeiling: feed.obscurity === "Deep underground" ? 10000
+      listenerMetric: "Last.fm total listeners", listenerCeiling: feed.obscurity === "Deep underground" ? 10000
         : feed.obscurity === "Underground" ? 50000 : 200000,
       checkedArtists: feed.verificationCount, verifiedCandidates: feed.verifiedArtists.length,
-      unknownCounts: feed.unknownCounts, countSource: "Spotify public artist pages",
+      unknownCounts: feed.unknownCounts, countSource: "Last.fm artist.getInfo",
       storeReady: feed.storeReady, spotifyProfileReady: !!service.currentUserId,
       spotifyConnected: service.accountConnected, spotifyError: service.lastError,
       spotifyCooldownUntil: service.searchCooldownUntil, tab: currentTab, homeType: homeType })
@@ -4673,7 +4673,7 @@ Item {
           Button {
             text: root.service ? root.service.discovery.obscurityLabel : "Obscure · <200,000"
             foreground: root.foreground
-            tooltipText: "Spotify monthly listeners: Obscure <200,000; Underground <50,000; Deep underground <10,000. Unknown counts are excluded."
+            tooltipText: "Last.fm total listeners: Obscure <200,000; Underground <50,000; Deep underground <10,000. Unknown counts are excluded."
             focusable: false
             hasCursor: root.cursorOn("page", "gem-obscurity")
             onHovered: function(on) { if (on) root.setPanelCursor("page", "gem-obscurity") }

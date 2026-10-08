@@ -18,9 +18,9 @@ TestCase {
 
   function test_ranking_treatsMissingListenersAsUnknown() {
     var artists = [
-      { name: "Known small", relevance: 1, similarity: 0.8, monthlyListeners: 100 },
-      { name: "Big", relevance: 1, similarity: 0.8, monthlyListeners: 1000000 },
-      { name: "Unknown", relevance: 1, similarity: 0.8, monthlyListeners: null }
+      { name: "Known small", relevance: 1, similarity: 0.8, lastFmListeners: 100 },
+      { name: "Big", relevance: 1, similarity: 0.8, lastFmListeners: 1000000 },
+      { name: "Unknown", relevance: 1, similarity: 0.8, lastFmListeners: null }
     ]
     var result = Discovery.rankArtists(artists,"Deep underground","Balanced",{})
     compare(result[0].name,"Known small")
@@ -30,13 +30,13 @@ TestCase {
 
   function test_closeAdventure_excludesSecondDegree() {
     compare(Discovery.rankArtists([
-      { name: "Direct", relevance: 1, similarity: 0.9, monthlyListeners: 100 },
-      { name: "Distant", relevance: 1, similarity: 0.8, monthlyListeners: 20, secondDegree: true }
+      { name: "Direct", relevance: 1, similarity: 0.9, lastFmListeners: 100 },
+      { name: "Distant", relevance: 1, similarity: 0.8, lastFmListeners: 20, secondDegree: true }
     ],"Underground","Close",{}).length,1)
   }
 
   function test_tracks_excludeHistoryLovedAndNegativeFeedback() {
-    var artist = { name: "A", score: 1, seed: "Seed", monthlyListeners: 20 }
+    var artist = { name: "A", score: 1, seed: "Seed", lastFmListeners: 20 }
     var history = {}, feedback = {}
     history[Discovery.trackKey("A","Heard")] = 100
     feedback[Discovery.trackKey("A","Hidden")] = { rating: "less" }
@@ -76,8 +76,8 @@ TestCase {
 
   function test_keysAndExplanation_neverConfuseListenerMetrics() {
     compare(Discovery.trackKey(" A ","Song"),Discovery.trackKey("a"," SONG "))
-    verify(Discovery.explanation({ seed: "A", monthlyListeners: null }).indexOf("unknown") >= 0)
-    verify(Discovery.explanation({ seed: "A", monthlyListeners: 100 }).indexOf("Spotify monthly listeners") >= 0)
+    verify(Discovery.explanation({ seed: "A", lastFmListeners: null }).indexOf("unknown") >= 0)
+    verify(Discovery.explanation({ seed: "A", lastFmListeners: 100 }).indexOf("Last.fm total listeners") >= 0)
     compare(Api.searchScope("home",null,null,"gems","").label,"Hidden gems")
     verify(Api.redact("api_key=abc lastFmApiKey=def").indexOf("abc") < 0)
   }
@@ -95,22 +95,19 @@ TestCase {
     })
   }
 
-  function test_publicPageCountsRequireExactLabelAndIdentity() {
-    var id = "abcdefghijklmnopqrstuv"
-    function html(label,canonical) {
-      return '<link rel="canonical" href="https://open.spotify.com/artist/'+(canonical || id)+'"/>'
-        + '<meta name="description" content="Artist · 199.9K monthly listeners"/>'
-        + '<div data-testid="monthly-listeners-label">'+label+'</div>'
-    }
-    compare(Discovery.parseAudience(html("199,999 monthly listeners"),id),199999)
-    compare(Discovery.parseAudience(html("0 monthly listeners"),id),0)
-    compare(Discovery.parseAudience(html("199.9K monthly listeners"),id),null)
-    compare(Discovery.parseAudience(html("1,23 monthly listeners"),id),null)
-    compare(Discovery.parseAudience(html("100 monthly listeners","ABCDEFGHIJKLMNOPQRSTUV"),id),null)
-    compare(Discovery.parseAudience('<meta content="1,234 monthly listeners"/>',id),null)
-    compare(Discovery.parseAudience(html("100 monthly listeners")
-      + '<div data-testid="monthly-listeners-label">200 monthly listeners</div>',id),null)
-    compare(Discovery.parseAudience(html("100 monthly listeners"),"bad/id"),null)
+  function test_lastFmTotalCountsRequireExactProfileAndNumbers() {
+    function payload(value,name) { return {artist:{name:name || "Small",stats:{listeners:value}}} }
+    compare(Discovery.lastFmListenerCount(payload("199999"),"small"),199999)
+    compare(Discovery.lastFmListenerCount(payload("200000"),"Small"),200000)
+    compare(Discovery.lastFmListenerCount(payload("0"),"Small"),0)
+    compare(Discovery.lastFmListenerCount(payload(123),"Small"),123)
+    compare(Discovery.lastFmListenerCount(payload("100","Other"),"Small"),null)
+    ;[null,undefined,"","199.9K","1,000","1e3","-1","1.2",false,Infinity,NaN].forEach(function(value) {
+      compare(Discovery.lastFmListenerCount(payload(value),"Small"),null)
+    })
+    compare(Discovery.lastFmListenerCount({artist:{name:"Small",stats:{playcount:"100"}}},"Small"),null)
+    compare(Discovery.lastFmListenerCount(null,"Small"),null)
+    verify(Discovery.explanation({seed:"A",lastFmListeners:100}).indexOf("monthly")<0)
   }
 
   function test_artistIdentityRejectsSameNameAmbiguity() {
@@ -125,15 +122,15 @@ TestCase {
     var rows = []
     for (var band=0; band<3; band++) for (var i=0; i<12; i++) {
       rows.push({ discoveryKey: band+"-"+i, discoverySpotifyArtistId: band+"-"+i,
-        discoveryMonthlyListeners: [1000,20000,100000][band], discoveryScore: [0.3,0.5,0.9][band] })
+        discoveryLastFmListeners: [1000,20000,100000][band], discoveryScore: [0.3,0.5,0.9][band] })
     }
-    rows.push({ discoveryKey:"huge", discoverySpotifyArtistId:"huge", discoveryMonthlyListeners:200000,discoveryScore:100 })
+    rows.push({ discoveryKey:"huge", discoverySpotifyArtistId:"huge", discoveryLastFmListeners:200000,discoveryScore:100 })
     rows.push(Object.assign({},rows[0],{ discoveryKey:"duplicate",discoveryScore:0.1 }))
     var feed = Discovery.selectFeed(rows,"Obscure",20), counts=[0,0,0]
-    feed.forEach(function(row) { counts[Discovery.audienceBand(row.discoveryMonthlyListeners)]++ })
+    feed.forEach(function(row) { counts[Discovery.audienceBand(row.discoveryLastFmListeners)]++ })
     compare(feed.length,20); compare(counts.join(","),"8,8,4")
     compare(Discovery.selectFeed(rows,"Deep underground",20).length,12)
-    verify(Discovery.selectFeed(rows,"Underground",20).every(function(row) { return row.discoveryMonthlyListeners < 50000 }))
+    verify(Discovery.selectFeed(rows,"Underground",20).every(function(row) { return row.discoveryLastFmListeners < 50000 }))
   }
 
   function test_searchBudgetGivesEachSeedATurnAndRotates() {
