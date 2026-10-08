@@ -11,11 +11,35 @@ small artists that fit your taste while making room for deeper exploration.
 2. Create an application API key at [Last.fm](https://www.last.fm/api/account/create).
 3. In the player, open **Settings → Last.fm · Hidden gems**.
 4. Enter your username and API key, then select **Apply Last.fm**.
-5. Open **For you → Hidden gems**, choose the depth, and select **Refresh**.
+5. Open **For you → Hidden gems**, choose the depth, and select **Refresh gems**.
 
 No Last.fm login, password, API secret, write permission, or new Spotify scope
 is required. The shipped username and API key are empty. Use your own key;
 never commit it to a source checkout or include it in an issue report.
+
+## Upgrade from Spotify listener checks
+
+Your existing Last.fm username and application API key still work. The change
+uses the same Last.fm connection and needs no additional credentials or Spotify
+permissions.
+
+The first visit rebuilds suggestions using total Last.fm listeners. Old Spotify
+listener counts and feeds are discarded; imported listening history, More/Less
+feedback, and previous-pick records are retained. You do not need to select
+**Clear local discovery data** to migrate.
+
+To check the update, open **For you → Hidden gems** and select **Refresh gems**.
+Completed picks should say **Last.fm total listeners** below the track. The
+limits remain strictly below 200,000, 50,000, and 10,000, but the numbers now
+refer to Last.fm’s accumulated listener accounts rather than Spotify’s monthly
+audience. A previous Spotify-qualified recommendation may no longer qualify.
+
+For the deepest search, choose **Deep underground** with **Adventurous**.
+This keeps every credited artist below 10,000 total Last.fm listeners and
+explores farther from your listening seeds. If the feed is short, keep the tier
+and refresh to rotate seeds, or try **Balanced** for stronger similarity fits.
+A refresh rebuilds the search while reusing listener evidence younger than
+24 hours; it does not force every artist count to be fetched again.
 
 ## Choose how obscure and how adventurous
 
@@ -128,9 +152,7 @@ history, or desktop configuration.
 - **Feeds refresh on demand.** Results are cached for 24 hours and refreshed on
   a later visit or with Refresh. There is no daily background polling.
 
-Older Balanced obscurity settings migrate to Obscure. Changing to total Last.fm
-listeners invalidates older feeds and Spotify count evidence while preserving
-imported history, feedback, and previous-pick records.
+Older Balanced obscurity settings migrate to Obscure.
 
 ## Implementation and verification
 
