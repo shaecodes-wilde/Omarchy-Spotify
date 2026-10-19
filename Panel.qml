@@ -57,6 +57,7 @@ Item {
   property var playlistPins: []
   property string rightPane: ""
   property int pendingFocusIndex: -1
+  property int focusRestoreAttempts: 0
   readonly property int sidebarPlaylistCursorIndex: sidebar.playlistList.currentIndex
   readonly property bool searchFieldFocused: unifiedSearchField.activeFocus
   property string lastContentTab: "home"
@@ -487,6 +488,7 @@ Item {
   function restoreRouteFocus() {
     if (pendingFocusIndex < 0) return
     var collection = collectionForListAction(panelCursorAction) || pageCollection()
+    if (collection && collection.restoreReady === false) return
     if (collection && collection.listCount > pendingFocusIndex && collection.restoreCurrentIndex) {
       collection.restoreCurrentIndex(pendingFocusIndex)
       pendingFocusIndex = -1
@@ -2144,12 +2146,34 @@ Item {
   onServiceChanged: Qt.callLater(function() { root.updateLoginGate() })
 
 
+  // List delegates can finish incubating after their model's countChanged signal.
+  Timer {
+    interval: 50
+    repeat: true
+    running: root.opened && root.pendingFocusIndex >= 0 && root.focusRestoreAttempts < 20
+    onTriggered: { root.focusRestoreAttempts++; root.restoreRouteFocus() }
+  }
+  onPendingFocusIndexChanged: focusRestoreAttempts = 0
+
+  Connections {
+    target: root.pendingFocusIndex >= 0
+      ? root.collectionForListAction(root.panelCursorAction) || root.pageCollection() : null
+    ignoreUnknownSignals: true
+    function onListCountChanged() { Qt.callLater(root.restoreRouteFocus) }
+    function onRestoreReadyChanged() { Qt.callLater(root.restoreRouteFocus) }
+  }
+  Connections {
+    target: root.pendingFocusIndex >= 0 ? root.pageListView() : null
+    ignoreUnknownSignals: true
+    function onCountChanged() { Qt.callLater(root.restoreRouteFocus) }
+  }
+
   Connections {
     target: root.service
     ignoreUnknownSignals: true
     function onPlaylistsChanged() { root.restorePlaylistSelection() }
-    function onDetailItemsChanged() { Qt.callLater(root.restoreRouteFocus) }
-    function onPlaylistItemsChanged() { Qt.callLater(root.restoreRouteFocus) }
+    function onDetailItemsChanged() { root.focusRestoreAttempts = 0; Qt.callLater(root.restoreRouteFocus) }
+    function onPlaylistItemsChanged() { root.focusRestoreAttempts = 0; Qt.callLater(root.restoreRouteFocus) }
     function onSearchResultsChanged() { Qt.callLater(root.restoreRouteFocus) }
     function onRadioPlaylistReady(playlist) {
       if (!playlist || !root.service) return
@@ -3194,6 +3218,7 @@ Item {
 
   FloatingWindow {
     id: window
+    objectName: "spotify-panel-window"
     visible: root.opened
     title: "Omarchy Spotify"
     color: root.background
@@ -3886,6 +3911,7 @@ Item {
 
             Loader {
               id: pageLoader
+              objectName: "spotify-page-loader"
               active: root.opened
               anchors.left: parent.left
               anchors.right: parent.right
@@ -3899,8 +3925,10 @@ Item {
           }
           Loader {
             id: rightPaneLoader
+            objectName: "spotify-right-pane-loader"
             active: root.opened && root.currentTab !== "login"
               && !root.compactWidth && root.rightPane !== ""
+              && !(root.currentTab === "queue" && root.rightPane === "queue")
             visible: active
             width: active ? Math.min(Style.space(280), workspace.width * 0.28) : 0
             height: parent.height
@@ -4647,9 +4675,9 @@ Item {
               ArtistLinks {
                 width: parent.width
                 artists: root.service && root.service.detailItem
-                  ? root.service.detailItem.artists : []
+                  ? Api.arrayValues(root.service.detailItem.artists) : []
                 fallbackText: root.service && root.service.detailItem
-                  ? root.service.detailItem.subtitle : ""
+                  ? String(root.service.detailItem.subtitle || "") : ""
                 suffixText: root.service && root.service.detailItem
                   ? Api.artistSubtitleSuffix(root.service.detailItem) : ""
                 color: root.accent

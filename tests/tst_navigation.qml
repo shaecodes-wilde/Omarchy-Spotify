@@ -23,6 +23,25 @@ TestCase {
     verify(state.backHistory.length > 0)
     compare(state.sidebarWidth, 360)
   }
+  function test_pins_stable_and_bounded() {
+    var items = [{id:"a"}, {id:"b"}, {id:"c"}]
+    var sorted = Navigation.pinnedPlaylists(items, ["c", "c"])
+    compare(sorted[0].id, "c")
+    compare(sorted[1].id, "a")
+    compare(items[0].id, "a")
+    compare(Navigation.pins(["a", "a", "b"]).length, 2)
+  }
+  function test_oversized_current_route_keeps_session() {
+    var value = {tab:"detail"}
+    for (var i=0; i<Navigation.TEXT_FIELDS.length; i++) value[Navigation.TEXT_FIELDS[i]] = "x".repeat(4000)
+    value.detailItem = {id:"p", type:"playlist", name:"x".repeat(4000), subtitle:"x".repeat(4000), description:"x".repeat(4000), uri:"spotify:playlist:p"}
+    value.selectedPlaylist = value.detailItem
+    value.lastRadioPlaylist = value.detailItem
+    value.playlistPins = Array.from({length:32}, function(_, index) { return String(index) + "x".repeat(120) })
+    var state = Navigation.session(value, [], [])
+    verify(JSON.stringify(state).length <= Navigation.SESSION_LIMIT)
+    compare(state.detailItem.id, "p")
+  }
   function test_link_navigation() {
     compare(Navigation.spotifyLink("spotify:playlist:abc123").type, "playlist")
     compare(Navigation.spotifyLink("https://open.spotify.com/intl-en/album/ABC?si=token").uri, "spotify:album:ABC")

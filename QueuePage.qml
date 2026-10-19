@@ -12,6 +12,27 @@ Item {
       readonly property var visibleItems: Api.filteredSorted(
         panel.service ? panel.service.queue : [], panel.queueFilter, "default")
 
+  readonly property string queueSurface: drawer ? "queue-drawer" : "queue-page"
+  function updateVisibleMetadata() {
+    if (!panel.service || typeof panel.service.setQueueVisibleItems !== "function") return
+    if (!panel.opened || !visible || queueList.count === 0) {
+      panel.service.setQueueVisibleItems(queueSurface, [])
+      return
+    }
+    var first = queueList.indexAt(Math.max(1, queueList.width / 2), queueList.contentY + 1)
+    if (first < 0) first = 0
+    var last = queueList.indexAt(Math.max(1, queueList.width / 2), queueList.contentY + queueList.height - 1)
+    if (last < first) last = Math.min(queueList.count - 1, first + 19)
+    panel.service.setQueueVisibleItems(queueSurface, visibleItems.slice(first, Math.min(last + 1, first + 50)))
+  }
+  onVisibleItemsChanged: Qt.callLater(updateVisibleMetadata)
+  onVisibleChanged: Qt.callLater(updateVisibleMetadata)
+  Component.onCompleted: Qt.callLater(updateVisibleMetadata)
+  Component.onDestruction: {
+    if (panel.service && typeof panel.service.setQueueVisibleItems === "function")
+      panel.service.setQueueVisibleItems(queueSurface, [])
+  }
+
       Column {
         anchors.fill: parent
         spacing: Style.space(8)
@@ -63,7 +84,12 @@ Item {
           cacheBuffer: Style.space(140)
           keyNavigationEnabled: false
           Component.onCompleted: contentY = panel.scrollFor("queue")
-          onContentYChanged: panel.rememberScroll("queue", contentY)
+          onContentYChanged: {
+            panel.rememberScroll("queue", contentY)
+            Qt.callLater(queueRoot.updateVisibleMetadata)
+          }
+          onHeightChanged: Qt.callLater(queueRoot.updateVisibleMetadata)
+          onCountChanged: Qt.callLater(queueRoot.updateVisibleMetadata)
           highlightFollowsCurrentItem: true
           activeFocusOnTab: false
           ScrollBar.vertical: ScrollBar { }
