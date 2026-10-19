@@ -201,7 +201,25 @@ ShellRoot {
   Timer {
     interval: 20
     running: true
-    onTriggered: { tests.init(); tests.controller.ensure(false); completion.start() }
+    onTriggered: {
+      tests.init()
+      tests.controller.active = false
+      tests.controller.ensure(true)
+      tests.check(!tests.controller.loading && tests.lastFmCalls === 0, "Hidden discovery made a cold request")
+      tests.controller.active = true
+      tests.holdResponse = true
+      tests.controller.ensure(false)
+      tests.check(tests.controller.loading && tests.held, "Visible discovery did not start")
+      tests.controller.active = false
+      tests.check(tests.held.aborted && !tests.controller.loading && !tests.controller.requested,
+        "Closing discovery did not abort its pipeline")
+      tests.complete(tests.held)
+      tests.check(tests.controller.importedCount === 0, "Closed pipeline accepted a late result")
+      tests.controller.active = true
+      tests.holdResponse = false
+      tests.controller.ensure(false)
+      completion.start()
+    }
   }
   Timer {
     id: completion

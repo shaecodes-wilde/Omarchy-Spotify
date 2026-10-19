@@ -86,3 +86,16 @@ if rg -i 'ReferenceError|TypeError|binding loop|Cannot assign|Unable to assign|F
   exit 1
 fi
 echo 'Quickshell discovery persistence integration passed.'
+
+cp "$source_root/tests/integration/ResourcePolicy.qml" "$test_root/app/shell.qml"
+env -u WAYLAND_DISPLAY QT_QPA_PLATFORM=offscreen QT_QPA_PLATFORMTHEME=generic NO_AT_BRIDGE=1 XDG_STATE_HOME="$test_root/state" \
+  timeout 15s dbus-run-session -- qs --no-color -p "$test_root/app" > "$test_root/resource-output" 2>&1 || {
+  cat "$test_root/resource-output"
+  exit 1
+}
+rg -q RESOURCE_POLICY_PASS "$test_root/resource-output" || { cat "$test_root/resource-output"; exit 1; }
+if rg -i 'ReferenceError|TypeError|binding loop|Cannot assign|Unable to assign|Failed to load configuration' "$test_root/resource-output"; then
+  exit 1
+fi
+echo 'Quickshell resource policy integration passed.'
+python3 "$source_root/tests/test_benchmark_processes.py"

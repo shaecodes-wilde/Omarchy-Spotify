@@ -63,6 +63,13 @@ TestCase {
     verify(lastError.indexOf("secret-looking") < 0)
   }
 
+  function test_uncachedHistory_isNotRetained() {
+    var api = createTemporaryObject(component,tests)
+    api.request("user.getRecentTracks", {user: "profile", page: 1}, receive, 0)
+    respond(requests[0], 200, {recenttracks: {track: [{name: "Private history"}]}})
+    compare(Object.keys(api.cache).length, 0)
+  }
+
   function test_rateLimit_blocksNewRequestsWithoutRetryLoop() {
     var api = createTemporaryObject(component,tests)
     api.request("artist.getInfo",{ artist: "A" },receive)

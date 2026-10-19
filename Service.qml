@@ -365,9 +365,26 @@ Item {
   readonly property int savedUriFreshnessMs: 300000
 
   readonly property alias discovery: discoveryController
-  DiscoveryController { id: discoveryController; host: root }
+  property var discoverySurfaces: ({})
+  readonly property bool discoveryVisible: Object.keys(discoverySurfaces).length > 0
+  property string selectedHomeTab: "overview"
+  DiscoveryController { id: discoveryController; host: root; active: root.discoveryVisible }
+
+  function setDiscoverySurfaceVisible(key, visible) {
+    var next = Object.assign({}, discoverySurfaces)
+    if (visible) next[String(key)] = true
+    else delete next[String(key)]
+    discoverySurfaces = next
+    if (discoveryVisible) loadHiddenGems(false)
+  }
+
+  function selectHomeTab(tab) {
+    selectedHomeTab = String(tab || "overview")
+    if (selectedHomeTab === "gems" && discoveryVisible) loadHiddenGems(false)
+  }
 
   function loadHiddenGems(force) {
+    if (!discoveryVisible) return
     if (!currentUserId && accountConnected) loadProfile()
     discoveryController.ensure(force)
   }
@@ -502,6 +519,57 @@ Item {
     || connectAuthManager.loginBusy || connectAuthManager.sessionBusy
 
   readonly property int cacheLimit: 200
+  property string activeLibraryKind: "tracks"
+  property var retainedLibraryPages: ({})
+  property var retainedPlaylistPage: null
+  property var retainedDetailPage: null
+
+  function retainDetailPage(itemsKey, nextKey, retainedKey) {
+    if (root[itemsKey].length <= cacheLimit)
+      root[retainedKey] = { items: root[itemsKey], next: root[nextKey] }
+  }
+
+  function trimHiddenDetailCollections() {
+    if (uiVisible) return
+    var specs = [
+      ["playlistItems", "playlistItemsNext", "retainedPlaylistPage", "playlistRestoreTargetCount"],
+      ["detailItems", "detailNext", "retainedDetailPage", "detailRestoreTargetCount"]
+    ]
+    specs.forEach(function(spec) {
+      if (root[spec[0]].length <= root.cacheLimit) return
+      var page = root[spec[2]]
+      root[spec[3]] = Math.max(root[spec[3]], root[spec[0]].length)
+      root[spec[0]] = page ? page.items : []
+      root[spec[1]] = page ? page.next : ""
+    })
+  }
+
+  function retainLibraryPage(kind) {
+    var spec = libraryCollectionSpec(kind)
+    var rows = root[spec.items]
+    // Keep a real page boundary so Load more resumes without skipping rows.
+    if (rows.length <= cacheLimit) {
+      var next = Object.assign({}, retainedLibraryPages)
+      next[kind] = { items: rows, next: root[spec.next], loaded: root[spec.loaded] }
+      retainedLibraryPages = next
+    }
+  }
+
+  function trimInactiveLibraryCollections() {
+    var kinds = ["tracks", "albums", "artists", "shows", "episodes", "audiobooks", "playlists"]
+    kinds.forEach(function(kind) {
+      if (root.uiVisible && ((root.activeView === "library" && kind === root.activeLibraryKind)
+          || (root.activeView === "playlists" && kind === "playlists"))) return
+      var spec = root.libraryCollectionSpec(kind)
+      if (root[spec.items].length <= root.cacheLimit) return
+      var page = root.retainedLibraryPages[kind]
+      root[spec.items] = page ? page.items : []
+      root[spec.next] = page ? page.next : ""
+      root[spec.loaded] = page ? page.loaded : false
+    })
+  }
+
+  onActiveViewChanged: trimInactiveLibraryCollections()
 
   signal operationFailed(string reason)
   signal radioPlaylistReady(var playlist)
@@ -1301,7 +1369,7 @@ Item {
     if (!authManager.loggedIn && !authManager.tokenIsFresh()) return
     if (activeView === "home") {
       if (force || !homeLoaded) loadHome()
-      loadHiddenGems(force)
+      if (selectedHomeTab === "gems") loadHiddenGems(force)
     }
     else if (activeView === "discover" && (force || !discoverLoaded))
       loadDiscover()
@@ -1536,6 +1604,8 @@ Item {
           root[spec.items] = items
           root[spec.next] = page.next
           root[spec.loaded] = true
+          root.retainLibraryPage(kind)
+          root.trimInactiveLibraryCollections()
           if (spec.checkSaved === true) root.checkSavedItems(page.items)
           else root.markItemsSaved(page.items, true)
           if (spec.mergeDiscover === true
@@ -1816,6 +1886,8 @@ Item {
 
   function loadLibrary(kind, append, force) {
     var value = String(kind || "tracks")
+    activeLibraryKind = value
+    trimInactiveLibraryCollections()
     if (append !== true && force !== true && libraryLoaded(value)) return
     loadLibraryCollection(value, append === true)
   }
@@ -1828,6 +1900,7 @@ Item {
     playlistRestoreTargetCount = Api.normalizedPlaylistRestoreCount(
       restoredItemCount)
     selectedPlaylist = playlist
+    retainedPlaylistPage = null
     playlistItems = []
     playlistItemsNext = ""
     playlistItemsError = ""
@@ -1884,10 +1957,12 @@ Item {
           append, page.next)
         root.playlistItems = playlistPage.items
         root.playlistItemsNext = playlistPage.next
-        if (Api.playlistRestoreShouldContinue(root.playlistItems.length,
+        root.retainDetailPage("playlistItems", "playlistItemsNext", "retainedPlaylistPage")
+        root.trimHiddenDetailCollections()
+        if (root.uiVisible && Api.playlistRestoreShouldContinue(root.playlistItems.length,
             root.playlistRestoreTargetCount, root.playlistItemsNext))
           root.loadPlaylistItems(true)
-        else root.playlistRestoreTargetCount = 0
+        else if (root.uiVisible) root.playlistRestoreTargetCount = 0
       })
   }
 
@@ -2156,6 +2231,7 @@ Item {
     detailRestoreTargetCount = type === "playlist"
       ? Api.normalizedPlaylistRestoreCount(restoredItemCount) : 0
     detailItem = item
+    retainedDetailPage = null
     detailItems = []
     detailNext = ""
     detailMessage = ""
@@ -2198,12 +2274,14 @@ Item {
       var page = root.detailPageFromPayload(payload, type, parent)
       root.detailItems = page.items
       root.detailNext = page.next
+      root.retainDetailPage("detailItems", "detailNext", "retainedDetailPage")
+      root.trimHiddenDetailCollections()
       root.detailLoading = false
       root.checkSavedItems(root.detailItems)
-      if (type === "playlist" && Api.playlistRestoreShouldContinue(
+      if (root.uiVisible && type === "playlist" && Api.playlistRestoreShouldContinue(
           root.detailItems.length, root.detailRestoreTargetCount,
           root.detailNext)) root.loadMoreDetail()
-      else root.detailRestoreTargetCount = 0
+      else if (root.uiVisible) root.detailRestoreTargetCount = 0
       if (type === "playlist" && !payload.items && !payload.tracks)
         root.detailMessage = Api.playlistItemsHiddenMessage()
     })
@@ -2377,11 +2455,13 @@ Item {
         ? root.detailItems.concat(page.items)
         : Api.mergeUnique(root.detailItems, page.items))
       root.detailNext = page.next
+      root.retainDetailPage("detailItems", "detailNext", "retainedDetailPage")
+      root.trimHiddenDetailCollections()
       root.checkSavedItems(page.items)
-      if (type === "playlist" && Api.playlistRestoreShouldContinue(
+      if (root.uiVisible && type === "playlist" && Api.playlistRestoreShouldContinue(
           root.detailItems.length, root.detailRestoreTargetCount,
           root.detailNext)) root.loadMoreDetail()
-      else root.detailRestoreTargetCount = 0
+      else if (root.uiVisible) root.detailRestoreTargetCount = 0
     })
   }
 
@@ -3804,6 +3884,9 @@ Item {
     playlists = []
     playlistsLoaded = false
     playlistsNext = ""
+    retainedLibraryPages = ({})
+    retainedPlaylistPage = null
+    retainedDetailPage = null
     savedTracks = []
     savedTracksLoaded = false
     savedTracksNext = ""
@@ -3946,7 +4029,11 @@ Item {
       syncCurrentTrackSaved(true)
       updateSleepCountdown()
     }
-    else cancelVisibleLocalDeviceRefresh()
+    else {
+      cancelVisibleLocalDeviceRefresh()
+      trimInactiveLibraryCollections()
+      trimHiddenDetailCollections()
+    }
   }
   onFullyConnectedChanged: {
     if (fullyConnected && uiVisible) ensureVisibleLocalReceiver()

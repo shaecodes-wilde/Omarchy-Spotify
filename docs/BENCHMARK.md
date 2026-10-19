@@ -30,8 +30,9 @@ the existing Omarchy shell:
   normal desktop noise in this short sample.
 
 The open-window sample was logged in on Discover with personalized rows and
-artwork loaded. Loaded rows remain bounded to 200 per view, delegates are
-recycled, and list artwork pixmaps are released with those delegates.
+artwork loaded. Delegates are recycled and list artwork pixmaps are released with those
+delegates. Manual pagination can exceed 200 visible rows; inactive metadata
+retention now uses exact page checkpoints (see PERFORMANCE_POLICY.md).
 
 ## Official Spotify comparison
 
@@ -120,10 +121,13 @@ changes PID during the 10-second window.
 ## Method
 
 `scripts/benchmark.sh` identifies exactly one Omarchy Quickshell process and
-the plugin backend or all spotifyd processes at sample start.
+the plugin backend or all spotifyd processes. It validates that complete
+process set and every PID start identity before and after sampling and after
+reading memory.
 `scripts/benchmark-spotify-desktop.sh`
 includes every process whose executable resolves to `/opt/spotify/spotify` and
-rejects a sample if that process set changes during the window. Both scripts
+applies the same process-set/start-identity checks. Both scripts reject missing
+or unreadable required counters instead of substituting zero. Both scripts
 read:
 
 - PSS and RSS from `/proc/PID/smaps_rollup` at the end of the window;
@@ -207,3 +211,12 @@ libraries already present on Omarchy. For scale only, the installed proprietary
 Spotify desktop package on the same host reports 368.51 MiB. Disk footprint is
 not a substitute for runtime measurement, but it illustrates why the plugin
 avoids shipping a browser runtime.
+
+
+## Candidate regression gates
+
+The executable isolated native comparison is `scripts/benchmark-compare.py`.
+See [PERFORMANCE_POLICY.md](PERFORMANCE_POLICY.md) for budgets, 1k/10k fixtures,
+closed/full/mini/navigation cases, and the distinction between offscreen fixture
+measurements and the historical live-shell results above. New harness smoke
+checks do not establish that an integrated candidate passes the release gates.

@@ -53,7 +53,7 @@ Item {
       callback(cached.payload, "")
       return
     }
-    queue = queue.concat([{ query: query, key: key, callback: callback, serial: serial }])
+    queue = queue.concat([{ query: query, key: key, callback: callback, serial: serial, cacheable: freshnessMs !== 0 }])
     if (!active && !pace.running) pump()
   }
 
@@ -61,7 +61,7 @@ Item {
     if (job !== active || job.serial !== serial) return
     active = null
     deadline.stop()
-    if (!error) {
+    if (!error && job.cacheable) {
       var next = Object.assign({}, cache)
       next[job.key] = { payload: payload, at: now() }
       var keys = Object.keys(next).sort(function(a,b) { return next[b].at-next[a].at }).slice(0,256)
