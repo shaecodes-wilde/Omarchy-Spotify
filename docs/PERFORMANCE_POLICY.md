@@ -95,7 +95,12 @@ per-route readiness. Twenty Search and Library presentations are asserted per
 round; async cancellation cannot count as visiting a page. The same read-only
 `pageReady` observer is injected into older base revisions. This is logical QML
 presentation, with compositor/pixel presentation outside the offscreen metric.
-Feedback and deadline-lag sampling continue throughout every navigation round. This fixture-owned data is confined to navigation; closed-after-use
+Feedback and deadline-lag sampling continue throughout every navigation round.
+Route changes follow production ordering: change Panel's tab before Service's
+active view. This destroys the outgoing table before inactive metadata trimming.
+The prefix checkpoint is prepared once; return navigation reuses a cached complete
+library or restores the fixture records once if the candidate trimmed it. It does
+not reset a still-complete library or rebuild its prefix on every return. This fixture-owned data is confined to navigation; closed-after-use
 keeps no such root references, so its retention comparison can release records.
 
 Mini-player content uses a real Wayland layer-shell window, which Qt's offscreen

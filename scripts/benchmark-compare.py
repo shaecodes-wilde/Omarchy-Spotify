@@ -24,7 +24,7 @@ def wait_for(log, marker, process, timeout=120, occurrences=1):
         content = log.read_text()
         if process.poll() is not None:
             raise RuntimeError('fixture exited: ' + content[-5000:])
-        if any(error in content for error in ('ReferenceError', 'TypeError', 'Failed to load configuration', 'Cannot assign', 'Unable to assign', 'BENCHMARK_INVALID')):
+        if any(error in content for error in ('ReferenceError', 'TypeError', 'Failed to load configuration', 'Cannot assign', 'Unable to assign', 'BENCHMARK_INVALID', 'Binding loop', 'binding loop')):
             raise RuntimeError('invalid fixture: ' + content[-5000:])
         if content.count(marker) >= occurrences:
             return

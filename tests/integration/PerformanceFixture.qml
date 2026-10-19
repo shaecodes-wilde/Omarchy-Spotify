@@ -70,6 +70,12 @@ ShellRoot {
     return rows
   }
   function populate() {
+    if (root.mode === "navigation" && prepared) {
+      if (service.savedTracks.length !== rowCount) service.savedTracks = navigationRows
+      service.savedTracksNext = ""
+      service.savedTracksLoaded = true
+      return
+    }
     service.savedTracks = root.mode === "navigation" ? navigationCheckpoint : tracks(Math.min(180, rowCount), "a")
     service.savedTracksNext = "/me/tracks?offset=180"
     service.savedTracksLoaded = true
@@ -226,8 +232,8 @@ ShellRoot {
         }
         startedAt = Date.now()
         deadlineAt = startedAt + 15000
-        service.activeView = "search"
         panel.currentTab = "search"
+        service.activeView = "search"
         phase = 1
         return
       }
@@ -243,9 +249,9 @@ ShellRoot {
       }
       if (phase === 2) {
         root.check(panel.currentTab === "search" && panel.pageReady, "Search disappeared before presentation")
+        panel.currentTab = "library"
         service.activeView = "library"
         root.populate()
-        panel.currentTab = "library"
         deadlineAt = Date.now() + 15000
         phase = 3
         return
