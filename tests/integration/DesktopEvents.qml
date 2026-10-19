@@ -205,6 +205,7 @@ ShellRoot {
         queueList.positionViewAtEnd()
       } else if (stage === 11) {
         check(spotify.resolvedQueueRows[spotify.resolvedQueueRows.length - 1].uri === "spotify:track:99", "Queue tail omitted the last visible row")
+        panel.libraryType = "tracks"
         panel.currentTab = "library"
         if (narrowWindow) check(panelWindow.width === 700, "Narrow layout did not use its initial size")
       } else if (stage === 12) {
