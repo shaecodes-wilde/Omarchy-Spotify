@@ -119,6 +119,7 @@ Item {
           anchors.fill: parent
           service: panel.service
           onBatchQueueRequested: function(items) { if (panel.service) panel.service.addItemsToQueue(items) }
+          onListInteracted: panel.setPanelCursor("page", keyboardListId)
           onBatchPlaylistRequested: function(items) { panel.openPlaylistPicker(items) }
           onBatchSaveRequested: function(items) { if (panel.service) panel.service.toggleSavedItems(items) }
           onBatchRemoveRequested: function(items) { if (panel.service) panel.service.removePlaylistItems(items, actionPlaylist) }

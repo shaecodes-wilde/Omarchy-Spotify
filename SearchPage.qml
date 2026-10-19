@@ -165,6 +165,7 @@ import "Api.js" as Api
           anchors.fill: parent
           service: panel.service
           onBatchQueueRequested: function(items) { if (panel.service) panel.service.addItemsToQueue(items) }
+          onListInteracted: panel.setPanelCursor("page", keyboardListId)
           onBatchPlaylistRequested: function(items) { panel.openPlaylistPicker(items) }
           onBatchSaveRequested: function(items) { if (panel.service) panel.service.toggleSavedItems(items) }
           onBatchRemoveRequested: function(items) { if (panel.service) panel.service.removePlaylistItems(items, actionPlaylist) }
@@ -177,6 +178,7 @@ import "Api.js" as Api
           hasMore: panel.service && panel.service.searchNext(panel.searchType) !== ""
           restoredContentY: panel.scrollFor("search:" + panel.searchType)
           stateKey: "search:" + panel.searchType
+          restoreReady: !panel.service || !panel.service.searchRestorePending(panel.searchText, panel.searchType)
           emptyMessage: panel.service && panel.service.searchLoading
             ? panel.service.searchProgressText(panel.searchClock) : "No " + Api.searchTypeLabel(panel.searchType)
               + " results."

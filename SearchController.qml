@@ -208,7 +208,7 @@ Item {
       var merged = Api.mergeSearchGroups(root.searchGroups, incoming)
       root.searchGroups = merged
       root.searchError = ""
-      root.checkSavedItems(root.searchItems(value))
+      root.checkSavedItems(incoming[value].items)
       root.continueRestore()
     }, {
       priority: "interactive",

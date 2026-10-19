@@ -90,6 +90,7 @@ ScrollView {
           sourceItems: parent.items
           service: controller.service
           onBatchQueueRequested: function(items) { if (controller.service) controller.service.addItemsToQueue(items) }
+          onListInteracted: controller.setPanelCursor("page", keyboardListId)
           onBatchPlaylistRequested: function(items) { controller.openPlaylistPicker(items) }
           onBatchSaveRequested: function(items) { if (controller.service) controller.service.toggleSavedItems(items) }
           onBatchRemoveRequested: function(items) { if (controller.service) controller.service.removePlaylistItems(items, actionPlaylist) }

@@ -127,4 +127,23 @@ TestCase {
     compare(state.searchItems("track").length, 0)
     verify(state.searchLoadedTypes.all)
   }
+  function test_restoreLoadsUntilTargetAndCancelsWhenHidden() {
+    var state = createTemporaryObject(controller, testCase)
+    state.search("restore", "track")
+    verify(state.ensureItemCount("restore", "track", 3))
+    calls[0].callback(result("track", [{ id: "1", uri: "spotify:track:1" }], "/next1"), "")
+    compare(calls.length, 2)
+    calls[1].callback(200, { tracks: { items: [{ type: "track", id: "2", uri: "spotify:track:2" }], next: "/next2" } }, "")
+    compare(calls.length, 3)
+    calls[2].callback(200, { tracks: { items: [{ type: "track", id: "3", uri: "spotify:track:3" }] } }, "")
+    verify(!state.restorePending("restore", "track"))
+    compare(state.searchItems("track").length, 3)
+    state.search("hidden", "track")
+    state.ensureItemCount("hidden", "track", 10)
+    var pending = calls[calls.length - 1]
+    state.active = false
+    pending.callback(result("track", [], "/hidden-next"), "")
+    verify(!state.searchLoading)
+    verify(!state.restorePending("hidden", "track"))
+  }
 }

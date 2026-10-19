@@ -1663,6 +1663,16 @@ Item {
     var delta = (key === Qt.Key_Up || text === "k" || key === Qt.Key_Left
       || text === "h") ? -1 : 1
 
+    if (shift && !ctrl && !alt && (key === Qt.Key_Up || key === Qt.Key_Down)
+        && panelCursorRegion === "page" && Api.isCursorListAction(panelCursorAction)) {
+      var collection = collectionForListAction(panelCursorAction)
+      if (collection && collection.enableSelection) {
+        var next = Api.listIndexAfterMove(collection.listCount, collection.listCurrentIndex, delta)
+        if (next >= 0) collection.selectRow(next, Qt.ShiftModifier)
+        return true
+      }
+    }
+
     if (!ctrl && !alt && !(shift && (key === Qt.Key_Left || key === Qt.Key_Right
           || key === Qt.Key_Up || key === Qt.Key_Down))
         && (vertical || horizontal) && (panelCursorActive
@@ -4540,6 +4550,7 @@ Item {
         anchors.fill: parent
         service: root.service
           onBatchQueueRequested: function(items) { if (root.service) root.service.addItemsToQueue(items) }
+          onListInteracted: root.setPanelCursor("page", keyboardListId)
           onBatchPlaylistRequested: function(items) { root.openPlaylistPicker(items) }
           onBatchSaveRequested: function(items) { if (root.service) root.service.toggleSavedItems(items) }
           onBatchRemoveRequested: function(items) { if (root.service) root.service.removePlaylistItems(items, actionPlaylist) }
@@ -4843,6 +4854,7 @@ Item {
                 keyboardListId: "list-albums"
                 service: root.service
           onBatchQueueRequested: function(items) { if (root.service) root.service.addItemsToQueue(items) }
+          onListInteracted: root.setPanelCursor("page", keyboardListId)
           onBatchPlaylistRequested: function(items) { root.openPlaylistPicker(items) }
           onBatchSaveRequested: function(items) { if (root.service) root.service.toggleSavedItems(items) }
           onBatchRemoveRequested: function(items) { if (root.service) root.service.removePlaylistItems(items, actionPlaylist) }
@@ -4892,6 +4904,7 @@ Item {
                 keyboardListId: "list-songs"
                 service: root.service
           onBatchQueueRequested: function(items) { if (root.service) root.service.addItemsToQueue(items) }
+          onListInteracted: root.setPanelCursor("page", keyboardListId)
           onBatchPlaylistRequested: function(items) { root.openPlaylistPicker(items) }
           onBatchSaveRequested: function(items) { if (root.service) root.service.toggleSavedItems(items) }
           onBatchRemoveRequested: function(items) { if (root.service) root.service.removePlaylistItems(items, actionPlaylist) }
@@ -5162,6 +5175,7 @@ Item {
           visible: !detailRoot.isArtist
           service: root.service
           onBatchQueueRequested: function(items) { if (root.service) root.service.addItemsToQueue(items) }
+          onListInteracted: root.setPanelCursor("page", keyboardListId)
           onBatchPlaylistRequested: function(items) { root.openPlaylistPicker(items) }
           onBatchSaveRequested: function(items) { if (root.service) root.service.toggleSavedItems(items) }
           onBatchRemoveRequested: function(items) { if (root.service) root.service.removePlaylistItems(items, actionPlaylist) }
@@ -5271,6 +5285,7 @@ Item {
           height: Math.max(40, parent.height - libraryTypes.height - parent.spacing)
           service: root.service
           onBatchQueueRequested: function(items) { if (root.service) root.service.addItemsToQueue(items) }
+          onListInteracted: root.setPanelCursor("page", keyboardListId)
           onBatchPlaylistRequested: function(items) { root.openPlaylistPicker(items) }
           onBatchSaveRequested: function(items) { if (root.service) root.service.toggleSavedItems(items) }
           onBatchRemoveRequested: function(items) { if (root.service) root.service.removePlaylistItems(items, actionPlaylist) }
@@ -5443,6 +5458,7 @@ Item {
           height: Math.max(40, parent.height - selectedPlaylistHeader.height - parent.spacing)
           service: root.service
           onBatchQueueRequested: function(items) { if (root.service) root.service.addItemsToQueue(items) }
+          onListInteracted: root.setPanelCursor("page", keyboardListId)
           onBatchPlaylistRequested: function(items) { root.openPlaylistPicker(items) }
           onBatchSaveRequested: function(items) { if (root.service) root.service.toggleSavedItems(items) }
           onBatchRemoveRequested: function(items) { if (root.service) root.service.removePlaylistItems(items, actionPlaylist) }

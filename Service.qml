@@ -354,6 +354,7 @@ Item {
   property int savedUrisRevision: 0
   property int savedUrisCheckingRevision: 0
   property int savedUrisBusyRevision: 0
+  property int savedMutationRevision: 0
   readonly property int savedUriCacheLimit: 4096
   readonly property int savedUriFreshnessMs: 300000
 
@@ -1658,6 +1659,7 @@ Item {
   function setSavedState(uri, value) {
     var key = String(uri || "")
     if (!key) return
+    savedMutationRevision++
     rememberSavedStates([key], value === true)
   }
 
@@ -1760,10 +1762,12 @@ Item {
   }
 
   function requestContains(chunk, expected) {
+    var mutation = savedMutationRevision
     spotifyApi.request("GET", "/me/library/contains", { uris: chunk }, null,
       function(status, payload, error) {
         if (expected !== root.dataSerial) return
         root.markSavedUrisChecking(chunk, false)
+        if (mutation !== root.savedMutationRevision) return
         if (error || !Array.isArray(payload)) return
         root.rememberSavedStates(chunk, payload)
       })
@@ -1843,6 +1847,7 @@ Item {
         function(status, payload, error) {
           if (expected !== root.dataSerial) return
           if (error) { finish(error); return }
+          root.savedMutationRevision++
           root.rememberSavedStates(uris, !removing)
           completed += batch.length
           next()
