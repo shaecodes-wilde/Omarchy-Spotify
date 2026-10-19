@@ -104,6 +104,7 @@ pub async fn start(config: BackendConfig, state: StateStore) -> Result<EngineRun
         device_type: DeviceType::Computer,
         initial_volume: INITIAL_VOLUME,
         disable_volume: false,
+        emit_set_queue_events: true,
         volume_steps: 64,
         ..ConnectConfig::default()
     };
