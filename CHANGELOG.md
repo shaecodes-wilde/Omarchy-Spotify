@@ -17,7 +17,8 @@
 - Run discovery only while Hidden Gems is visible and release inactive collection
   metadata at complete page boundaries without losing pagination.
 - Create hidden row actions only when shown, keeping compact table density and
-  theme-aware overflow measurements.
+  theme-aware overflow measurements. Compact tables keep Save and duration visible
+  and group secondary actions behind the row menu.
 - Add isolated native interaction, transport, pagination and resource-policy
   regressions, plus comparative PSS/CPU/feedback/retention performance gates.
 

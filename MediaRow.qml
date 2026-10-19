@@ -98,7 +98,7 @@ BorderSurface {
     contentRow.width - artworkSurface.width - fullActionWidth
       - albumColumnWidth - dateColumnWidth
       - contentRow.spacing * (artworkSurface.visible ? 2 : 1))
-  readonly property bool compactActions: Api.mediaRowShouldCompact(
+  readonly property bool compactActions: compactRows || Api.mediaRowShouldCompact(
     titleMetrics.advanceWidth, titleWidthWithFullActions, fullActionCount)
 
   signal activated(var item)

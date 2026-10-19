@@ -81,6 +81,11 @@ ShellRoot {
     verify(!play.item && !queue.item && !playlist.item)
     row.width = 1200
     verify(!row.compactActions && play.item && queue.item && playlist.item)
+    row.compactRows = true
+    verify(row.compactActions && !play.item && !queue.item && !playlist.item)
+    verify(save.item && named(row, "media-row-duration").visible)
+    toggle.clicked()
+    verify(play.item && queue.item && playlist.item)
     row.destroy()
   }
   function init() {
