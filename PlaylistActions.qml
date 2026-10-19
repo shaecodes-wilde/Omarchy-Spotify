@@ -30,7 +30,15 @@ Item {
     if (!playlist || !playlist.id || !host.playlistEditable(playlist)
         || host.playlistActionBusy) return
     var uris = Api.playlistItemUris(items)
-    if (removing) uris = uris.filter(function(uri, index) { return uris.indexOf(uri) === index })
+    if (removing) {
+      var seen = ({})
+      uris = uris.filter(function(uri) {
+        var key = "$" + uri
+        if (seen[key]) return false
+        seen[key] = true
+        return true
+      })
+    }
     if (!uris.length) return
     var expected = host.dataSerial
     var completed = 0

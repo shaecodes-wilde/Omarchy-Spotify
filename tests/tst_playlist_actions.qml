@@ -71,6 +71,23 @@ TestCase {
     requests[1].callback(200, {}, "")
     verify(!fakeHost.playlistActionBusy)
   }
+  function test_largeRemovalDeduplicatesWithoutChangingBatchOrder() {
+    var item = createTemporaryObject(actions, testCase)
+    var rows = []
+    for (var i = 0; i < 10000; i++) rows.push({ type: "track", uri: "spotify:track:" + i })
+    rows.push(rows[0], rows[9999])
+    item.writeItems(rows, playlist(), true)
+    for (var batch = 0; batch < 100; batch++) {
+      compare(requests.length, batch + 1)
+      compare(requests[batch].body.items.length, 100)
+      compare(requests[batch].body.items[0].uri, "spotify:track:" + batch * 100)
+      compare(requests[batch].body.items[99].uri, "spotify:track:" + (batch * 100 + 99))
+      requests[batch].callback(200, { snapshot_id: "s" + (batch + 2) }, "")
+    }
+    compare(requests.length, 100)
+    compare(reloads, 1)
+    verify(!fakeHost.playlistActionBusy)
+  }
   function test_accountChangeIgnoresLateResponseAndPermissionsGuardWrites() {
     var item = createTemporaryObject(actions, testCase)
     item.writeItems([{ type: "track", uri: "spotify:track:a" }], { id: "foreign" }, false)
