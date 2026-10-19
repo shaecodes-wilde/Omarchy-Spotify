@@ -18,6 +18,18 @@ the collection policy does not claim to bound them. See
 No browser engine, background library index, new service or runtime dependency is
 added. Omasing, Omarchy themes and the native playback path remain in place.
 
+Validation on this branch passes Rust formatting, 26 tests and Clippy, plugin
+validation and qmllint, 248 QML tests, 19 Python helper tests, installer checks,
+five socket cases, four sampler tests, and isolated Quickshell regressions. Native
+QtTest events verify click-to-Enter, Shift selection and dragging two selected
+tracks into a playlist; fixtures also cover loading/errors, narrow layout and
+queue viewport boundaries. All helpers, runtime directories and DBus sessions
+are isolated from the live account and playback backend.
+
+These screenshots use fictional metadata with artwork disabled and a test theme:
+[library selection](screenshots/desktop-parity/library-selection.png) and
+[mixed search](screenshots/desktop-parity/mixed-search.png).
+
 This update is a PR, not a deployment or versioned release. The installation and
 measurements below describe the September implementation and are historical.
 

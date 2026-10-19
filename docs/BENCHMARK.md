@@ -1,5 +1,10 @@
 # Resource benchmark
 
+The live measurements below are historical. They have not been repeated for
+the desktop-parity branch. Its isolated comparisons use the separate
+[performance policy](PERFORMANCE_POLICY.md); metadata fixtures do not establish
+current live-audio or artwork costs.
+
 Measured on 2026-08-12 on Omarchy 4 (`4.0.0.r1658.g0820484`),
 Quickshell `0.3.0.r20.g28771c7`, Qt 6.11.1, and Linux 7.1.5. The host has an
 Intel Core Ultra X7 358H, 31.0 GiB RAM, and a 3200×2000 display at 120 Hz and
