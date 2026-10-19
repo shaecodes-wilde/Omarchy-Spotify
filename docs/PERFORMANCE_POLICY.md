@@ -43,6 +43,11 @@ freshness (scrobble-history pages) are not retained in its response cache.
 
 ## Collection retention
 
+The collection ListView uses row positions as its model. Each live or buffered
+delegate reads its record from the filtered/sorted JavaScript array, keeping
+nested track metadata outside the native model adaptor. Same-length data refreshes
+update delegate records without resetting the view position.
+
 Manually paging an active collection remains complete; there is no 200-row
 visible-list truncation. Each library category retains the most recent *complete
 page boundary* at or below 200 rows. When the category becomes inactive, or all UI

@@ -55,6 +55,17 @@ ShellRoot {
     }
     return null
   }
+  function test_sameLengthReplacementAndSortUpdateLiveRows() {
+    var title = named(collection, "media-row-title")
+    verify(title)
+    compare(title.text, "Alpha")
+    var original = testCase.rows
+    testCase.rows = [original[1], original[0], original[2]]
+    compare(title.text, "Beta")
+    collection.sortKey = "name"
+    compare(title.text, "Alpha")
+    testCase.rows = original
+  }
   function test_hiddenRowActionsAreLazyAndKeepTheirGeometry() {
     var row = rowFactory.createObject(testWindow.contentItem)
     var toggle = named(row, "media-row-actions-toggle")
@@ -136,6 +147,7 @@ ShellRoot {
       init(); test_compactColumnsAndPersistentPreferences()
       init(); test_selectionAndFilteringNeverPlayOrChangeSourceOrder()
       init(); test_shiftKeyboardSelectionAndFocusRestoration()
+      init(); test_sameLengthReplacementAndSortUpdateLiveRows()
       test_hiddenRowActionsAreLazyAndKeepTheirGeometry()
       console.log("TRACK_TABLE_PASS")
       Qt.quit()

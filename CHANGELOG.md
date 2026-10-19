@@ -16,6 +16,8 @@
   callbacks; stop batch writes on an uncertain result.
 - Run discovery only while Hidden Gems is visible and release inactive collection
   metadata at complete page boundaries without losing pagination.
+- Keep large collection metadata outside the ListView model; visible delegates
+  read records by position, including same-length refreshes and sorted views.
 - Create hidden row actions only when shown, keeping compact table density and
   theme-aware overflow measurements. Compact tables keep Save and duration visible
   and group secondary actions behind the row menu.

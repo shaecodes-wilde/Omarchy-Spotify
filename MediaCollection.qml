@@ -496,7 +496,8 @@ Item {
           + (emptyLabel.visible && emptyLabel.height > 0 ? 1 : 0)
           + (filterProgress.visible && filterProgress.height > 0 ? 1 : 0)
           + (moreButton.visible && moreButton.height > 0 ? 1 : 0)))
-      model: root.visibleItems
+      // Keep metadata in JS; materialize only the rows the view actually needs.
+      model: root.visibleItems.length
       clip: true
       spacing: Style.space(3)
       reuseItems: true
@@ -547,20 +548,20 @@ Item {
       }
 
       delegate: MediaRow {
-        required property var modelData
         required property int index
-        itemData: modelData
+        readonly property var rowItem: root.visibleItems[index] || null
+        itemData: rowItem
         foreground: Color.foreground
         accent: Color.accent
         fontFamily: Style.font.family
-        selected: root.isSelected(modelData) || (ListView.isCurrentItem && root.keyboardAtList)
-        selectionEnabled: root.enableSelection && modelData.kind === "item"
+        selected: root.isSelected(rowItem) || (ListView.isCurrentItem && root.keyboardAtList)
+        selectionEnabled: root.enableSelection && !!rowItem && rowItem.kind === "item"
         compactRows: root.compactRows && root.trackTable
         albumColumn: root.albumColumn
         dateColumn: root.dateColumn
-        draggedItems: root.isSelected(modelData) ? root.selectedItems() : [modelData]
+        draggedItems: root.isSelected(rowItem) ? root.selectedItems() : [rowItem]
         onSelectionRequested: function(modifiers) { root.selectRow(index, modifiers) }
-        browseOnActivate: root.browseContexts && modelData.kind === "context"
+        browseOnActivate: root.browseContexts && !!rowItem && rowItem.kind === "context"
         showQueue: root.showQueue
         showPlaylist: root.showPlaylist
         showSave: root.showSave
@@ -569,7 +570,7 @@ Item {
         reorderDropIndicator: root.dragDestinationIndex === index
           && root.dragSourceIndex !== index
           ? (index < root.dragSourceIndex ? -1 : 1) : 0
-        saved: root.service ? root.service.isSaved(modelData) : false
+        saved: root.service ? root.service.isSaved(rowItem) : false
         artworkEnabled: !root.service || root.service.artworkEnabled
         ShortcutHint {
           ctrlHeld: root.keyboardCtrlHeld
