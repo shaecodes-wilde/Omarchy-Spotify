@@ -1,0 +1,23 @@
+{
+  "status": "invalid",
+  "measurement_profile": "release-parameters",
+  "seconds": 10,
+  "samples": 3,
+  "settle_seconds": 20,
+  "platform": "wayland",
+  "metadata_only": true,
+  "artwork": false,
+  "live_account": false,
+  "baseline": "/tmp/omarchy-spotify-baseline",
+  "candidate": "/home/shaedotwilde/.cache/omarchy-spotify/parity-candidate-9d5e825",
+  "limitations": [
+    "Offscreen measures native item creation and local event feedback, not compositor input-to-photon latency.",
+    "Fixture metadata has no artwork; use live benchmark.sh for actual artwork/playback costs.",
+    "Keyring, systemctl and playback setup commands are stubbed; runtime and DBus session are isolated."
+  ],
+  "cases": {
+    "mini-1000": {}
+  },
+  "skipped": [],
+  "error": "invalid fixture:   INFO: Launching config: \"/home/shaedotwilde/.cache/omarchy-spotify/test-tmp/omarchy-perf-7zruo_5_/app/shell.qml\"\n  INFO: Shell ID: \"1d1bd0cda1e1890125365452a3314b4a\" Path ID \"1d1bd0cda1e1890125365452a3314b4a\"\n  INFO: Saving logs to \"/run/user/1000/sb-t7x7jho4/quickshell/by-id/fjbz171h6nt/log.qslog\"\n  INFO: Configuration Loaded\n  WARN qt.qpa.services: Failed to register with host portal QDBusError(\"org.freedesktop.DBus.Error.ServiceUnknown\", \"The name org.freedesktop.portal.Desktop was not provided by any .service files\")\n DEBUG qml: PERFORMANCE_READY\n DEBUG qml: PERFORMANCE_EVENT_LOOP_LAG_MS 101\n DEBUG qml: PERFORMANCE_FEEDBACK_MS 0\n DEBUG qml: PERFORMANCE_EVENT_LOOP_LAG_MS 0\n DEBUG qml: PERFORMANCE_FEEDBACK_MS 1\n DEBUG qml: PERFORMANCE_EVENT_LOOP_LAG_MS 0\n DEBUG qml: PERFORMANCE_FEEDBACK_MS 1\n DEBUG qml: PERFORMANCE_EVENT_LOOP_LAG_MS 0\n DEBUG qml: PERFORMANCE_FEEDBACK_MS 1\n DEBUG qml: PERFORMANCE_EVENT_LOOP_LAG_MS 0\n DEBUG qml: PERFORMANCE_FEEDBACK_MS 1\n DEBUG qml: PERFORMANCE_EVENT_LOOP_LAG_MS 0\n DEBUG qml: PERFORMANCE_FEEDBACK_MS 0\n DEBUG qml: PERFORMANCE_EVENT_LOOP_LAG_MS 0\n DEBUG qml: PERFORMANCE_FEEDBACK_MS 1\n DEBUG qml: PERFORMANCE_EVENT_LOOP_LAG_MS 0\n DEBUG qml: PERFORMANCE_FEEDBACK_MS 1\n DEBUG qml: PERFORMANCE_EVENT_LOOP_LAG_MS 0\n DEBUG qml: PERFORMANCE_FEEDBACK_MS 0\n DEBUG qml: PERFORMANCE_EVENT_LOOP_LAG_MS 0\n DEBUG qml: PERFORMANCE_FEEDBACK_MS 1\n DEBUG qml: PERFORMANCE_EVENT_LOOP_LAG_MS 0\n DEBUG qml: PERFORMANCE_FEEDBACK_MS 0\n DEBUG qml: PERFORMANCE_EVENT_LOOP_LAG_MS 0\n DEBUG qml: PERFORMANCE_FEEDBACK_MS 1\n DEBUG qml: PERFORMANCE_EVENT_LOOP_LAG_MS 0\n DEBUG qml: PERFORMANCE_FEEDBACK_MS 0\n DEBUG qml: PERFORMANCE_EVENT_LOOP_LAG_MS 0\n DEBUG qml: PERFORMANCE_FEEDBACK_MS 1\n DEBUG qml: PERFORMANCE_EVENT_LOOP_LAG_MS 0\n DEBUG qml: PERFORMANCE_FEEDBACK_MS 0\n DEBUG qml: PERFORMANCE_EVENT_LOOP_LAG_MS 0\n DEBUG qml: PERFORMANCE_FEEDBACK_MS 0\n DEBUG qml: PERFORMANCE_EVENT_LOOP_LAG_MS 0\n DEBUG qml: PERFORMANCE_FEEDBACK_MS 0\n DEBUG qml: PERFORMANCE_EVENT_LOOP_LAG_MS 0\n DEBUG qml: PERFORMANCE_FEEDBACK_MS 1\n DEBUG qml: PERFORMANCE_EVENT_LOOP_LAG_MS 0\n DEBUG qml: PERFORMANCE_FEEDBACK_MS 0\n DEBUG qml: PERFORMANCE_EVENT_LOOP_LAG_MS 0\n DEBUG qml: PERFORMANCE_FEEDBACK_MS 0\n DEBUG qml: PERFORMANCE_FEEDBACK_DONE\n  WARN scene: @shell.qml[87:-1]: Error: BENCHMARK_INVALID: mini player did not load the fixture service\n"
+}

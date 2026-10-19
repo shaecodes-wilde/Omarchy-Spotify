@@ -1,0 +1,4 @@
+{
+  "reason": "Complete 1k navigation memory and plateau failure; stopped for controlled async-vs-sync allocation investigation.",
+  "revision": "06e0ed570e693e845fd4e50f509e61faf0a6440c"
+}

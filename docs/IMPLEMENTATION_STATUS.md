@@ -27,6 +27,12 @@ geometry and action dispatch. Fixtures cover loading/errors, narrow layout and
 queue viewport boundaries. All helpers, runtime directories and DBus sessions
 are isolated from the live account and playback backend.
 
+All ten release-parameter performance cases pass against main `68c50c0`. The
+10k full view uses 76.8 MiB less PSS; both navigation sizes pass feedback,
+event-loop lag and retention-growth gates. Exact source hashes, raw samples,
+earlier failures and limits are in the
+[performance evidence](performance/2026-10-19-desktop-parity/README.md).
+
 These screenshots use fictional metadata with artwork disabled and a test theme:
 [library selection](screenshots/desktop-parity/library-selection.png) and
 [mixed search](screenshots/desktop-parity/mixed-search.png).

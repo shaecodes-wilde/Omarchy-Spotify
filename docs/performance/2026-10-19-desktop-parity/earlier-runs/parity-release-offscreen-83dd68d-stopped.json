@@ -1,0 +1,4 @@
+{
+  "reason": "Complete 1k navigation failed memory, plateau and event-loop lag; stopped to defer compact-row secondary actions even for short titles.",
+  "revision": "83dd68d83e9109224930070cb91a7b32a72892f3"
+}

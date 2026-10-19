@@ -1,0 +1,207 @@
+{
+  "status": "pass",
+  "measurement_profile": "release-parameters",
+  "seconds": 10,
+  "samples": 3,
+  "settle_seconds": 20,
+  "platform": "wayland",
+  "metadata_only": true,
+  "artwork": false,
+  "live_account": false,
+  "wayland_input_isolation": true,
+  "baseline": "/tmp/omarchy-spotify-baseline",
+  "candidate": "/home/shaedotwilde/.cache/omarchy-spotify/parity-candidate-33ef49a",
+  "limitations": [
+    "Offscreen measures native item creation and local event feedback, not compositor input-to-photon latency.",
+    "Fixture metadata has no artwork; use live benchmark.sh for actual artwork/playback costs.",
+    "Keyring, systemctl and playback setup commands are stubbed; runtime and DBus session are isolated.",
+    "Wayland mini uses an input-transparent, unfocusable private KeyboardPanel copy without dismissal surfaces; physical input behavior is not measured."
+  ],
+  "cases": {
+    "mini-1000": {
+      "baseline": {
+        "samples": [
+          {
+            "pss_kib": 177079,
+            "rss_kib": 224836,
+            "cpu_percent": 0.0,
+            "switches_per_second": 0.49999549753827466,
+            "seconds": 10.0000900500454
+          },
+          {
+            "pss_kib": 177031,
+            "rss_kib": 224788,
+            "cpu_percent": 0.09999916987717082,
+            "switches_per_second": 0.8999925288945374,
+            "seconds": 10.000083012972027
+          },
+          {
+            "pss_kib": 177045,
+            "rss_kib": 224792,
+            "cpu_percent": 0.0,
+            "switches_per_second": 0.499995441741422,
+            "seconds": 10.000091166002676
+          }
+        ],
+        "median": {
+          "pss_kib": 177045,
+          "rss_kib": 224792,
+          "cpu_percent": 0.0,
+          "switches_per_second": 0.49999549753827466,
+          "seconds": 10.0000900500454
+        },
+        "feedback_sample_count": 20,
+        "event_loop_lag_sample_count": 20,
+        "event_loop_lag_p95_ms": 18.0,
+        "feedback_p95_ms": 1.0,
+        "navigation_p95_ms": null,
+        "plateau_growth_kib": -34
+      },
+      "candidate": {
+        "samples": [
+          {
+            "pss_kib": 174877,
+            "rss_kib": 222600,
+            "cpu_percent": 0.0,
+            "switches_per_second": 0.09999934602374422,
+            "seconds": 10.000065398053266
+          },
+          {
+            "pss_kib": 174851,
+            "rss_kib": 222600,
+            "cpu_percent": 0.0,
+            "switches_per_second": 0.0,
+            "seconds": 10.000083933002315
+          },
+          {
+            "pss_kib": 174879,
+            "rss_kib": 222600,
+            "cpu_percent": 0.0,
+            "switches_per_second": 0.0,
+            "seconds": 10.000092288013548
+          }
+        ],
+        "median": {
+          "pss_kib": 174877,
+          "rss_kib": 222600,
+          "cpu_percent": 0.0,
+          "switches_per_second": 0.0,
+          "seconds": 10.000083933002315
+        },
+        "feedback_sample_count": 20,
+        "event_loop_lag_sample_count": 20,
+        "event_loop_lag_p95_ms": 17.0,
+        "feedback_p95_ms": 1.0,
+        "navigation_p95_ms": null,
+        "plateau_growth_kib": 2
+      },
+      "delta": {
+        "pss_kib": -2168,
+        "cpu_percent": 0.0,
+        "switches_per_second": -0.49999549753827466
+      },
+      "budget_pss_kib": 5120,
+      "checks": {
+        "memory": true,
+        "hidden_cpu": true,
+        "scheduler": true,
+        "feedback": true,
+        "event_loop_lag": true,
+        "cache_plateau": true
+      }
+    },
+    "mini-10000": {
+      "candidate": {
+        "samples": [
+          {
+            "pss_kib": 175063,
+            "rss_kib": 223020,
+            "cpu_percent": 0.0,
+            "switches_per_second": 0.09999886874225113,
+            "seconds": 10.000113127054647
+          },
+          {
+            "pss_kib": 175054,
+            "rss_kib": 223020,
+            "cpu_percent": 0.0,
+            "switches_per_second": 0.0,
+            "seconds": 10.000062893028371
+          },
+          {
+            "pss_kib": 175062,
+            "rss_kib": 223020,
+            "cpu_percent": 0.0,
+            "switches_per_second": 0.0,
+            "seconds": 10.000107535975985
+          }
+        ],
+        "median": {
+          "pss_kib": 175062,
+          "rss_kib": 223020,
+          "cpu_percent": 0.0,
+          "switches_per_second": 0.0,
+          "seconds": 10.000107535975985
+        },
+        "feedback_sample_count": 20,
+        "event_loop_lag_sample_count": 20,
+        "event_loop_lag_p95_ms": 25.0,
+        "feedback_p95_ms": 1.0,
+        "navigation_p95_ms": null,
+        "plateau_growth_kib": -1
+      },
+      "baseline": {
+        "samples": [
+          {
+            "pss_kib": 177460,
+            "rss_kib": 225296,
+            "cpu_percent": 0.0,
+            "switches_per_second": 0.09999929904497763,
+            "seconds": 10.000070095993578
+          },
+          {
+            "pss_kib": 177460,
+            "rss_kib": 225296,
+            "cpu_percent": 0.0,
+            "switches_per_second": 0.0,
+            "seconds": 10.00009324902203
+          },
+          {
+            "pss_kib": 177443,
+            "rss_kib": 225280,
+            "cpu_percent": 0.09999927944557266,
+            "switches_per_second": 0.8999935150101539,
+            "seconds": 10.000072055961937
+          }
+        ],
+        "median": {
+          "pss_kib": 177460,
+          "rss_kib": 225296,
+          "cpu_percent": 0.0,
+          "switches_per_second": 0.09999929904497763,
+          "seconds": 10.000072055961937
+        },
+        "feedback_sample_count": 20,
+        "event_loop_lag_sample_count": 20,
+        "event_loop_lag_p95_ms": 17.0,
+        "feedback_p95_ms": 1.0,
+        "navigation_p95_ms": null,
+        "plateau_growth_kib": -17
+      },
+      "delta": {
+        "pss_kib": -2398,
+        "cpu_percent": 0.0,
+        "switches_per_second": -0.09999929904497763
+      },
+      "budget_pss_kib": 5120,
+      "checks": {
+        "memory": true,
+        "hidden_cpu": true,
+        "scheduler": true,
+        "feedback": true,
+        "event_loop_lag": true,
+        "cache_plateau": true
+      }
+    }
+  },
+  "skipped": []
+}

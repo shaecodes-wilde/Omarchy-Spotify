@@ -97,15 +97,16 @@ through more results, or paste a Spotify track, album, artist or playlist link
 into search to open it directly. Back/Forward remembers the route, filter, sort,
 loaded depth and scroll position; restored pages load only while visible.
 
-Song lists default to compact rows. Use **Compact / Comfortable** and **Columns**
+Song lists default to compact rows, with Save and duration visible and secondary
+actions behind the row menu. Use **Compact / Comfortable** and **Columns**
 to choose the density and metadata. Click selects a song, double-click or Enter
 plays it, Ctrl-click adds to the selection, Shift-click/Shift-arrow extends it,
 and Ctrl+A selects the loaded matching songs. The selection toolbar queues,
 saves, or adds the songs to a playlist. **Remove all copies** in an editable
-playlist removes every occurrence of each selected song. Drag a song to a sidebar
-playlist to add it; hold Ctrl when dragging from a reorderable playlist to copy
-instead of reorder. Owned playlists also support creation and name/description
-editing.
+playlist removes every occurrence of each selected song. Hold Ctrl and drag a song
+or selection to a sidebar playlist to add it. Normal dragging within an unsorted,
+unfiltered editable playlist reorders its songs. Owned playlists support creation
+and name/description editing.
 
 The Queue pane follows the active playback source. The native receiver reports
 queue changes directly, resolves metadata only for visible rows, and keeps at
@@ -115,6 +116,10 @@ remain subject to Spotify's API permissions; unavailable actions explain the
 restriction. Uncertain writes stop with a visible error rather than replaying
 an operation that might already have succeeded.
 
+
+[Native performance evidence](docs/performance/2026-10-19-desktop-parity/README.md)
+records ten passing metadata-fixture cases. At 10k songs, the full view uses 76.8 MiB
+less PSS than main; this does not measure live audio or artwork.
 
 The layout is inspired by the Spotify client, so there is almost nothing new
 to learn. Your library and playlists live in the sidebar, search stays at the

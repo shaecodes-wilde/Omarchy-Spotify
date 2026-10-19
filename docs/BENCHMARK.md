@@ -225,3 +225,9 @@ See [PERFORMANCE_POLICY.md](PERFORMANCE_POLICY.md) for budgets, 1k/10k fixtures,
 closed/full/mini/navigation cases, and the distinction between offscreen fixture
 measurements and the historical live-shell results above. New harness smoke
 checks do not establish that an integrated candidate passes the release gates.
+
+
+The 19 October desktop parity candidate passed all ten release-parameter cases.
+See the [exact source, raw reports and limits](performance/2026-10-19-desktop-parity/README.md).
+The 10k full-view metadata fixture uses 76.8 MiB less PSS than main `68c50c0`;
+this is separate from the historical live-shell/audio measurements above.
