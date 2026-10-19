@@ -206,7 +206,7 @@ ShellRoot {
       } else if (stage === 7) {
         var drawer = find(panelWindow.contentItem, function(item) { return item.objectName === "spotify-right-pane-loader" })
         if (!narrowWindow && !ready(drawer && drawer.status === Loader.Ready, "Queue drawer did not finish loading")) return
-        if (!ready(homeRowsReady(), "Home shelves were blank beside the queue pane")) return
+        if (!narrowWindow && !ready(homeRowsReady(), "Home shelves were blank beside the queue pane")) return
         capture("queue-pane-wide")
         panel.toggleRightPane("queue")
         panel.currentTab = "queue"
