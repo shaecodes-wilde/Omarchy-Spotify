@@ -2,7 +2,7 @@
 
 ## Desktop parity update, 19 October 2026
 
-The `feat/spotify-desktop-parity` branch starts from main `68c50c0`. It adds
+The `feat/spotify-desktop-experience` branch starts from main `68c50c0`. It adds
 Back/Forward and bounded session routes, local playlist pins, a resizable sidebar,
 lazy listening panes, mixed search, compact selectable song tables, batch library
 and playlist actions, and playlist metadata editing. Native queue snapshots are
@@ -19,7 +19,7 @@ No browser engine, background library index, new service or runtime dependency i
 added. Omasing, Omarchy themes and the native playback path remain in place.
 
 Validation on this branch passes Rust formatting, 26 tests and Clippy, plugin
-validation and qmllint, 248 QML tests, 19 Python helper tests, installer checks,
+validation and qmllint, 249 QML tests, 19 Python helper tests, installer checks,
 five socket cases, four sampler tests, and isolated Quickshell regressions. Native
 QtTest events verify click-to-Enter, Shift selection and dragging two selected
 tracks into a playlist; fixtures also cover loading/errors, narrow layout and

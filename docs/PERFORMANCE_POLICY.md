@@ -5,7 +5,7 @@ using the same native fixture, Qt/Quickshell build, display backend, machine,
 row count and settle period. Do not compare an isolated fixture's absolute memory
 with the incremental live-shell figures in BENCHMARK.md.
 
-The proposed gates are:
+The gates are:
 
 - Closed: candidate median PSS at most 2 MiB above base.
 - Same populated full view: candidate median PSS at most 5 MiB above base.
