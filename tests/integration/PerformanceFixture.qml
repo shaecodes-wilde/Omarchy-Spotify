@@ -12,6 +12,8 @@ ShellRoot {
   readonly property bool closedMode: mode === "closed" || mode === "closed-after-use"
   property int httpAttempts: 0
   property bool prepared: false
+  property var navigationRows: []
+  property var navigationCheckpoint: []
   Plugin.Service { id: service }
   QtObject {
     id: fakeShell
@@ -68,11 +70,11 @@ ShellRoot {
     return rows
   }
   function populate() {
-    service.savedTracks = tracks(Math.min(180, rowCount), "a")
+    service.savedTracks = root.mode === "navigation" ? navigationCheckpoint : tracks(Math.min(180, rowCount), "a")
     service.savedTracksNext = "/me/tracks?offset=180"
     service.savedTracksLoaded = true
     if (typeof service.retainLibraryPage === "function") service.retainLibraryPage("tracks")
-    service.savedTracks = tracks(rowCount, "a")
+    service.savedTracks = root.mode === "navigation" ? navigationRows : tracks(rowCount, "a")
     service.savedTracksNext = ""
   }
   function check(value, message) {
@@ -114,6 +116,10 @@ ShellRoot {
         receivedAt: Date.now(), device: { id: "fixture-remote", name: "Fixture device", active: true,
         supportsVolume: true, volumePercent: 50 }, item: root.tracks(1,"current")[0] }
       service.activeView = "library"
+      if (root.mode === "navigation") {
+        navigationRows = root.tracks(root.rowCount, "a")
+        navigationCheckpoint = navigationRows.slice(0, Math.min(180, root.rowCount))
+      }
       if (root.mode !== "closed" && root.mode !== "mini") {
         root.populate()
         panel.currentTab = "library"

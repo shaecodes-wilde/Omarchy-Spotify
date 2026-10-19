@@ -85,6 +85,10 @@ identity and rejecting HTTP factories provide another guard against network work
 Closed-after-use first opens that populated page, then closes every fixture
 surface and checks the candidate's retained library row budget. Closed cold loads
 no rows; its 1k/10k labels identify the matrix configuration, not loaded content.
+Navigation prebuilds normalized fixture records once, then reuses them so repeated
+route timings measure UI rebuilding instead of a synchronous mock-payload
+normalizer. This fixture-owned data is confined to navigation; closed-after-use
+keeps no such root references, so its retention comparison can release records.
 
 Mini-player content uses a real Wayland layer-shell window, which Qt's offscreen
 backend does not provide. The offscreen report explicitly marks it skipped and
