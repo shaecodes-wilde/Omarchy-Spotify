@@ -75,7 +75,8 @@ git archive <base-sha> | tar -x -C /tmp/spotify-base
 
 The default matrix includes cold closed, closed-after-use, full and repeated-navigation states with
 1,000 and 10,000 metadata rows. Every source/state is a fresh Quickshell process,
-with a private DBus session, runtime directory, config/cache/state/data directories
+with a private DBus session, disabled system-bus address, private runtime directory,
+config/cache/state/data directories
 and stubbed keyring, systemctl and playback setup commands. Artwork and real
 playback are deliberately absent. No installed plugin or real account is changed.
 The same fixture comes from the candidate harness for both source revisions.

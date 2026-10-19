@@ -67,13 +67,14 @@ def run_case(tree, mode, count, args, output, name):
             destination.write_text('#!/bin/sh\nexit 1\n')
             destination.chmod(0o755)
         env = os.environ.copy()
-        for variable in ('DBUS_SESSION_BUS_ADDRESS', 'WAYLAND_DISPLAY'):
+        for variable in ('DBUS_SESSION_BUS_ADDRESS', 'DBUS_STARTER_ADDRESS', 'DBUS_STARTER_BUS_TYPE', 'WAYLAND_DISPLAY'):
             env.pop(variable, None)
         if args.platform == 'wayland':
             env['WAYLAND_DISPLAY'] = str(Path(os.environ['XDG_RUNTIME_DIR']) / os.environ['WAYLAND_DISPLAY'])
         env.update(QT_QPA_PLATFORM=args.platform, QT_QPA_PLATFORMTHEME='generic', NO_AT_BRIDGE='1',
                    BENCHMARK_MODE=mode, BENCHMARK_ROWS=str(count),
                    PATH=str(mock_bin)+os.pathsep+env['PATH'], XDG_RUNTIME_DIR=str(runtime),
+                   DBUS_SYSTEM_BUS_ADDRESS='unix:path='+str(runtime / 'disabled-system-bus'),
                    XDG_CONFIG_HOME=str(temporary / 'config'), XDG_STATE_HOME=str(temporary / 'state'),
                    XDG_DATA_HOME=str(temporary / 'data'), XDG_CACHE_HOME=str(temporary / 'cache'))
         bus_config = temporary / 'dbus.conf'
