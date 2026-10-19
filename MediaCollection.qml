@@ -347,7 +347,10 @@ Item {
     restoreView()
     if (navigationOwner) navigationOwner.registerCollection(root)
   }
-  onSourceItemsChanged: selection = Selection.retain(sourceItems, selection)
+  onSourceItemsChanged: {
+    if (selectionCount > 0) selection = Selection.retain(sourceItems, selection)
+    if (selectionCount === 0) selectionAnchor = -1
+  }
   onFilterTextChanged: clearSelection()
   onSortKeyChanged: clearSelection()
   onRestoredContentYChanged: resetRestore()

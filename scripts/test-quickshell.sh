@@ -58,12 +58,12 @@ cat > "$test_root/dbus.conf" <<BUS
 BUS
 
 run_native() {
-  local config=$1 marker=$2 description=$3 platform=${4:-offscreen}
+  local config=$1 marker=$2 description=$3 platform=${4:-offscreen} limit=${5:-15s}
   [[ ! -e "$test_runtime/omarchy-spotify/backend.sock" ]]
   local -a display_env=()
   if [[ $platform == wayland ]]; then display_env+=(WAYLAND_DISPLAY="$test_wayland_display"); fi
   if ! env -u WAYLAND_DISPLAY QT_QPA_PLATFORM="$platform" "${display_env[@]}" \
-      timeout 15s dbus-run-session --config-file="$test_root/dbus.conf" -- \
+      timeout -k 2s "$limit" dbus-run-session --config-file="$test_root/dbus.conf" -- \
       qs --no-color -p "$config" > "$test_root/output" 2>&1; then
     cat "$test_root/output"
     exit 1
@@ -75,6 +75,19 @@ run_native() {
   fi
   echo "Quickshell $description integration passed."
 }
+
+if [[ $# -gt 0 ]]; then
+  case "$1" in
+    DesktopNavigation) marker=DESKTOP_NAVIGATION_PASS ;;
+    DesktopEvents) marker=DESKTOP_EVENTS_PASS ;;
+    *) echo "Unknown desktop fixture: $1" >&2; exit 2 ;;
+  esac
+  cp "$source_root/"*.qml "$source_root/"*.js "$test_root/app/plugin/"
+  cp -r /usr/share/omarchy/shell/Commons /usr/share/omarchy/shell/Ui "$test_root/app/"
+  cp "$source_root/tests/integration/$1.qml" "$test_root/app/shell.qml"
+  run_native "$test_root/app" "$marker" "$1" offscreen 20s
+  exit
+fi
 
 cp "$source_root/"{AuthManager.qml,Api.js,OAuth.js} "$test_root/"
 sed 's|import "../.." as Plugin|import "." as Plugin|' \

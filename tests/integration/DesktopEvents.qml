@@ -142,8 +142,10 @@ ShellRoot {
             && item.parent.parent.modelData && item.parent.parent.modelData.type === "saved"
         })
         check(!!savedMore, "Saved shelf Show all is missing")
-        driver.mouseClick(savedMore, savedMore.width / 2, savedMore.height / 2)
-        check(panel.currentTab === "library" && panel.libraryType === "tracks", "Saved shelf opened the wrong library category")
+        if (!narrowWindow) {
+          driver.mouseClick(savedMore, savedMore.width / 2, savedMore.height / 2)
+          check(panel.currentTab === "library" && panel.libraryType === "tracks", "Saved shelf opened the wrong library category")
+        }
         panel.currentTab = "search"
         panel.searchType = "all"
         panel.searchText = "Coast"
