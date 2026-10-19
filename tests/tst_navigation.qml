@@ -63,6 +63,19 @@ TestCase {
     verify(JSON.stringify(state).length <= Navigation.SESSION_LIMIT)
     compare(state.detailItem.id, item.id)
   }
+  function test_escaped_session_always_fits() {
+    var route = {tab:"detail", scrollPositions:{}, playlistPins:[]}
+    var escaped = "\u0000".repeat(5000)
+    for (var f=0; f<Navigation.TEXT_FIELDS.length; f++) route[Navigation.TEXT_FIELDS[f]] = escaped
+    var item = {id:escaped, type:"playlist", name:escaped, subtitle:escaped, uri:escaped,
+      imageUrl:escaped, description:escaped, ownerId:escaped}
+    route.detailItem = item; route.selectedPlaylist = item; route.lastRadioPlaylist = item
+    for (var p=0; p<32; p++) route.playlistPins.push(String(p) + escaped)
+    for (var s=0; s<128; s++) route.scrollPositions[String(s) + escaped] = 10000000
+    var state = Navigation.session(route, Array(20).fill(route), Array(20).fill(route))
+    verify(JSON.stringify(state).length <= Navigation.SESSION_LIMIT)
+    compare(state.detailItem.id.length, 128)
+  }
   function test_link_navigation() {
     compare(Navigation.spotifyLink("spotify:playlist:abc123").type, "playlist")
     compare(Navigation.spotifyLink("https://open.spotify.com/intl-en/album/ABC?si=token").uri, "spotify:album:ABC")

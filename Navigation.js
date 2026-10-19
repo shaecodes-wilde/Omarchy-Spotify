@@ -116,6 +116,21 @@ function session(source, back, forward) {
   }
   while (JSON.stringify(result).length > SESSION_LIMIT && result.playlistPins.length)
     result.playlistPins.shift()
+  // JSON control-character escaping can expand a single character sixfold.
+  if (JSON.stringify(result).length > SESSION_LIMIT) {
+    for (var t = 0; t < TEXT_FIELDS.length; t++) {
+      var textField = TEXT_FIELDS[t]
+      if (result[textField]) result[textField] = result[textField].slice(0, 32)
+    }
+    var identities = [result.detailItem, result.selectedPlaylist, result.lastRadioPlaylist]
+    for (var d = 0; d < identities.length; d++) {
+      if (!identities[d]) continue
+      identities[d].name = String(identities[d].name || "").slice(0, 64)
+      identities[d].uri = String(identities[d].uri || "").slice(0, 128)
+      identities[d].ownerId = String(identities[d].ownerId || "").slice(0, 64)
+    }
+    if (result.selectedPlaylist) result.selectedPlaylistId = result.selectedPlaylist.id
+  }
   return result
 }
 
