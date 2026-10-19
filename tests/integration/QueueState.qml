@@ -6,13 +6,47 @@ ShellRoot {
   id: tests
   property var calls: []
   property var replies: []
-  Plugin.Service {
-    id: service
+  Plugin.Service { id: service }
+  Plugin.QueueController {
+    id: queueTest
+    host: service
     function enqueueQueueItem(item, native, device, callback) {
       tests.calls.push(item.uri)
       tests.replies.push(callback)
     }
   }
+  property var metadataCalls: []
+  property var metadataReplies: []
+  QtObject {
+    id: fakeApi
+    function abortRequest(handle) {}
+    function request(method, path, query, body, callback) {
+      tests.metadataCalls.push(query.ids)
+      tests.metadataReplies.push(callback)
+    }
+  }
+  QtObject {
+    id: fakeBackend
+    property bool ready: true
+    property var capabilities: ({queue_snapshot: true})
+    property var lastQueue: ({next_tracks: [
+      {uri:"spotify:track:visible"}, {uri:"spotify:track:hidden"}]})
+    signal queueReceived(var queue)
+  }
+  QtObject {
+    id: metadataHost
+    property var api: fakeApi
+    property var backend: fakeBackend
+    property bool useRemotePlayback: false
+    property bool accountConnected: true
+    property int dataSerial: 1
+    property string currentUri: ""
+    property string selectedDeviceId: ""
+    property var remoteDevice: null
+    property var remotePlayback: null
+    property string activeView: "home"
+  }
+  Plugin.QueueController { id: metadataTest; host: metadataHost }
   Timer {
     interval: 20
     running: true
@@ -44,23 +78,35 @@ ShellRoot {
       if (service.queue.length || service.queueLoaded)
         throw new Error("Disconnected queue was retained")
       var callbacks = 0
-      service.addItemsToQueue([{type:"track",uri:"spotify:track:first"},
+      queueTest.addItemsToQueue([{type:"track",uri:"spotify:track:first"},
         {type:"track",uri:"spotify:track:first"}, {type:"episode",uri:"spotify:episode:last"}],
         function(ok, added, error, unknown) {
           callbacks++
           if (ok || added !== 1 || !unknown) throw new Error("Queue partial outcome was lost")
         })
-      if (!service.queueActionBusy || tests.calls.length !== 1)
+      if (!queueTest.queueActionBusy || tests.calls.length !== 1)
         throw new Error("Batch queue did not begin sequentially")
-      service.addToQueue({type:"track",uri:"spotify:track:duplicate"})
+      queueTest.addToQueue({type:"track",uri:"spotify:track:duplicate"})
       if (tests.calls.length !== 1) throw new Error("Rapid duplicate action was dispatched")
       tests.replies[0](true, {}, "", false)
       if (tests.calls.length !== 2 || tests.calls[1] !== tests.calls[0])
         throw new Error("Intentional duplicate was lost or queue order changed")
       tests.replies[1](false, null, "Disconnected", true)
       tests.replies[1](false, null, "Disconnected", true)
-      if (tests.calls.length !== 2 || callbacks !== 1 || service.queueActionBusy)
+      if (tests.calls.length !== 2 || callbacks !== 1 || queueTest.queueActionBusy)
         throw new Error("Uncertain queue action retried or completed more than once")
+      if (tests.metadataCalls.length) throw new Error("Hidden queue requested metadata")
+      metadataTest.setQueueVisibleItems("pane", [{type:"track",id:"visible",uri:"spotify:track:visible"}])
+      if (tests.metadataCalls.join() !== "visible") throw new Error("Hidden metadata was included in batch")
+      metadataTest.setQueueVisibleItems("pane", [])
+      tests.metadataReplies[0](200, {tracks:[{type:"track",id:"visible",uri:"spotify:track:visible",name:"Visible"}]}, "")
+      if (tests.metadataCalls.length !== 1) throw new Error("Hidden metadata chain continued")
+      metadataTest.setQueueVisibleItems("pane", [{type:"track",id:"hidden",uri:"spotify:track:hidden"}])
+      tests.metadataReplies[1](403, null, "Restricted metadata endpoint")
+      fakeBackend.queueReceived(fakeBackend.lastQueue)
+      metadataTest.setQueueVisibleItems("pane", [{type:"track",id:"another",uri:"spotify:track:another"}])
+      if (tests.metadataCalls.length !== 2 || metadataTest.queue[1].kind !== "item")
+        throw new Error("Restricted endpoint retried or native placeholder lost item kind")
       console.log("QUEUE_STATE_PASS")
       Qt.quit()
     }

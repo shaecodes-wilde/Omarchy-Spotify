@@ -74,9 +74,11 @@ items. A null queue invalidates the snapshot when the native session disconnects
 Queue data is absent from ordinary state/position events and `get_state`;
 reconnect to receive the latest queue snapshot. There is no queue polling.
 
-The UI resolves uncached display metadata only while the queue page is open,
+The UI resolves uncached display metadata only for rows reported visible by the
+queue page or drawer,
 using bounded Web API metadata batches and a 200-entry account-local cache.
-Unavailable metadata retains URI identity and a placeholder; it cannot change
+Restricted metadata endpoints disable further metadata requests for that
+account session. Unavailable metadata retains URI identity and a placeholder; it cannot change
 queue order. Track/device changes invalidate Web queue snapshots and discard
 in-flight responses for the previous playback identity.
 
