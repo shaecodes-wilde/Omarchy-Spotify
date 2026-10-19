@@ -365,7 +365,7 @@ BorderSurface {
                 fontSize: Style.font.icon
               }
             }
-          
+
   MouseArea {
     anchors.right: parent.right
     anchors.top: parent.top
