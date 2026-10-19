@@ -40,6 +40,8 @@ function snapshot(source) {
   result.selectedPlaylist = context(value.selectedPlaylist)
   result.detailItemCount = count(value.detailItemCount)
   result.selectedPlaylistItemCount = count(value.selectedPlaylistItemCount)
+  result.libraryItemCount = count(value.libraryItemCount)
+  result.searchItemCount = count(value.searchItemCount)
   result.focusActive = value.focusActive === true
   result.universalSearchActive = value.universalSearchActive === true
   result.searchInContext = value.searchInContext !== false
@@ -96,6 +98,24 @@ function session(source, back, forward) {
       contexts[c].subtitle = String(contexts[c].subtitle || "").slice(0, 128)
     }
   }
+  var scrollKeys = Object.keys(result.scrollPositions)
+  while (JSON.stringify(result).length > SESSION_LIMIT && scrollKeys.length)
+    delete result.scrollPositions[scrollKeys.shift()]
+  if (JSON.stringify(result).length > SESSION_LIMIT) {
+    for (var j = 0; j < TEXT_FIELDS.length; j++) {
+      var name = TEXT_FIELDS[j]
+      if (result[name]) result[name] = result[name].slice(0, 128)
+    }
+    var summaries = [result.detailItem, result.selectedPlaylist, result.lastRadioPlaylist]
+    for (var k = 0; k < summaries.length; k++) {
+      if (!summaries[k]) continue
+      delete summaries[k].imageUrl
+      delete summaries[k].description
+      delete summaries[k].subtitle
+    }
+  }
+  while (JSON.stringify(result).length > SESSION_LIMIT && result.playlistPins.length)
+    result.playlistPins.shift()
   return result
 }
 

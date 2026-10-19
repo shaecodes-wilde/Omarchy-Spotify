@@ -23,6 +23,14 @@ TestCase {
     verify(state.backHistory.length > 0)
     compare(state.sidebarWidth, 360)
   }
+  function test_route_depth_is_scalar_and_bounded() {
+    var route = Navigation.snapshot({tab:"library", libraryType:"albums", libraryItemCount:750,
+      searchText:"artist", searchType:"track", searchItemCount:300})
+    compare(route.libraryItemCount, 750)
+    compare(route.searchItemCount, 300)
+    compare(Navigation.snapshot({libraryItemCount:90000, searchItemCount:-1}).libraryItemCount, 10000)
+    compare(Navigation.snapshot({libraryItemCount:90000, searchItemCount:-1}).searchItemCount, 0)
+  }
   function test_pins_stable_and_bounded() {
     var items = [{id:"a"}, {id:"b"}, {id:"c"}]
     var sorted = Navigation.pinnedPlaylists(items, ["c", "c"])
@@ -41,6 +49,19 @@ TestCase {
     var state = Navigation.session(value, [], [])
     verify(JSON.stringify(state).length <= Navigation.SESSION_LIMIT)
     compare(state.detailItem.id, "p")
+  }
+  function test_adversarial_session_always_fits() {
+    var route = {tab:"detail", scrollPositions:{}, playlistPins:[]}
+    for (var f=0; f<Navigation.TEXT_FIELDS.length; f++) route[Navigation.TEXT_FIELDS[f]] = "z".repeat(5000)
+    var item = {id:"i".repeat(128), type:"playlist"}
+    var fields = ["name", "subtitle", "uri", "imageUrl", "description", "ownerId"]
+    for (var c=0; c<fields.length; c++) item[fields[c]] = "m".repeat(5000)
+    route.detailItem = item; route.selectedPlaylist = item; route.lastRadioPlaylist = item
+    for (var p=0; p<32; p++) route.playlistPins.push(String(p) + "p".repeat(126))
+    for (var s=0; s<128; s++) route.scrollPositions[String(s) + "s".repeat(176)] = 10000000
+    var state = Navigation.session(route, Array(20).fill(route), Array(20).fill(route))
+    verify(JSON.stringify(state).length <= Navigation.SESSION_LIMIT)
+    compare(state.detailItem.id, item.id)
   }
   function test_link_navigation() {
     compare(Navigation.spotifyLink("spotify:playlist:abc123").type, "playlist")

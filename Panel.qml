@@ -65,6 +65,8 @@ Item {
   property var restoredPlaylist: null
   property int restoredPlaylistItemCount: 0
   property int restoredDetailItemCount: 0
+  property int restoredLibraryItemCount: 0
+  property int restoredSearchItemCount: 0
   readonly property bool artworkVisible: !service || service.artworkEnabled
 
   property string draftLastFmUsername: ""
@@ -476,6 +478,10 @@ Item {
       universalSearchActive: universalSearchActive, searchInContext: searchInContext,
       detailItem: currentTab === "detail" && service ? service.detailItem : null,
       detailItemCount: service ? service.detailRememberedItemCount : restoredDetailItemCount,
+      libraryItemCount: service ? Math.max(restoredLibraryItemCount, service.libraryItems(libraryType).length) : restoredLibraryItemCount,
+      searchItemCount: searchType === "all" ? 0 : service
+        ? Math.max(restoredSearchItemCount, service.searchResultQuery === searchText.trim()
+          ? service.searchItems(searchType).length : 0) : restoredSearchItemCount,
       selectedPlaylist: selected, selectedPlaylistId: selected ? selected.id : restoredPlaylistId,
       selectedPlaylistItemCount: service && service.selectedPlaylist
         ? service.playlistRememberedItemCount : restoredPlaylistItemCount,
@@ -527,6 +533,8 @@ Item {
     restoredPlaylistId = state.selectedPlaylistId || (restoredPlaylist ? restoredPlaylist.id : "")
     restoredPlaylistItemCount = state.selectedPlaylistItemCount
     restoredDetailItemCount = state.detailItemCount
+    restoredLibraryItemCount = state.libraryItemCount
+    restoredSearchItemCount = state.searchItemCount
     panelCursorRegion = state.focusRegion || "page"
     panelCursorAction = state.focusAction || "list"
     panelCursorActive = state.focusActive
@@ -629,6 +637,14 @@ Item {
     } else if (currentTab !== "detail") service.openView(currentTab, false)
     if (currentTab === "playlists" && restoredPlaylist)
       service.openPlaylist(restoredPlaylist, restoredPlaylistItemCount)
+    ensureRouteDepth()
+  }
+
+  function ensureRouteDepth() {
+    if (!service || !opened) return
+    if (currentTab === "library") service.ensureLibraryItemCount(libraryType, restoredLibraryItemCount)
+    if (showingUniversalSearch && searchType !== "all")
+      service.ensureSearchItemCount(searchText, searchType, restoredSearchItemCount)
   }
 
   function goBack() {
@@ -1825,6 +1841,7 @@ Item {
       return
     }
     searchText = text
+    restoredSearchItemCount = 0
     if (!service) return
     if (text.trim() === "") {
       service.clearSearch()
@@ -1903,7 +1920,10 @@ Item {
 
   function selectSearchType(type) {
     var value = type === "all" ? "all" : Api.normalizedSearchType(type)
-    if (searchType !== value) searchType = value
+    if (searchType !== value) {
+      restoredSearchItemCount = 0
+      searchType = value
+    }
     if (service && showingUniversalSearch && searchText.trim() !== "")
       requestSearch(searchText, value)
   }
@@ -1997,6 +2017,7 @@ Item {
       if (currentTab === "search" && Api.searchNeedsLoad(searchText,
           service.searchResultQuery, service.searchLoadedTypes[searchType]))
         requestSearch(searchText, searchType)
+      ensureRouteDepth()
     }
     Qt.callLater(function() {
       focusScope.forceActiveFocus()
@@ -2135,6 +2156,9 @@ Item {
   }
   onOpenedChanged: syncDiscoverySurface()
   onHomeTypeChanged: syncDiscoverySurface()
+  onLibraryTypeChanged: restoredLibraryItemCount = 0
+  onSearchTypeChanged: restoredSearchItemCount = 0
+  onSearchTextChanged: restoredSearchItemCount = 0
   onPanelCursorActionChanged: syncCollectionCursor()
   onPanelCursorRegionChanged: syncCollectionCursor()
   onPanelCursorActiveChanged: syncCollectionCursor()
@@ -5242,6 +5266,7 @@ Item {
 
         MediaCollection {
           id: libraryCollection
+          restoreReady: !root.service || !root.service.libraryRestorePending(root.libraryType)
           width: parent.width
           height: Math.max(40, parent.height - libraryTypes.height - parent.spacing)
           service: root.service
