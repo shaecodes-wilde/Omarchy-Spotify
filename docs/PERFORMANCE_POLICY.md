@@ -87,7 +87,14 @@ surface and checks the candidate's retained library row budget. Closed cold load
 no rows; its 1k/10k labels identify the matrix configuration, not loaded content.
 Navigation prebuilds normalized fixture records once, then reuses them so repeated
 route timings measure UI rebuilding instead of a synchronous mock-payload
-normalizer. This fixture-owned data is confined to navigation; closed-after-use
+normalizer. Each cycle waits for Search's matching Loader to become ready, keeps
+that loaded component through a separate timer tick, then waits for Library's
+matching Loader and exact row count. A 15-second bound applies to initial and
+per-route readiness. Twenty Search and Library presentations are asserted per
+round; async cancellation cannot count as visiting a page. The same read-only
+`pageReady` observer is injected into older base revisions. This is logical QML
+presentation, with compositor/pixel presentation outside the offscreen metric.
+Feedback and deadline-lag sampling continue throughout every navigation round. This fixture-owned data is confined to navigation; closed-after-use
 keeps no such root references, so its retention comparison can release records.
 
 Mini-player content uses a real Wayland layer-shell window, which Qt's offscreen

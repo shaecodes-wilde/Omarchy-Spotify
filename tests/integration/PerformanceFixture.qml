@@ -80,6 +80,23 @@ ShellRoot {
   function check(value, message) {
     if (!value) throw new Error("BENCHMARK_INVALID: " + message)
   }
+  function populatedPageReady() {
+    var collection = panel.pageCollection()
+    return panel.pageReady && collection && collection.listCount === root.rowCount
+      && collection.sourceItems.length === root.rowCount
+  }
+  function beginNavigation() {
+    check(!navigation.running, "navigation rounds overlapped")
+    root.cycle = 0
+    navigation.phase = 0
+    navigation.searchPresented = 0
+    navigation.libraryPresented = 0
+    feedback.count = 0
+    feedback.expectedAt = Date.now() + feedback.interval
+    feedback.start()
+    navigation.start()
+    return "ok"
+  }
   function verifyFrame() {
     check(root.httpAttempts === 0 && !service.accountConnected, "fixture attempted HTTP or acquired an account")
     if (root.closedMode && root.prepared) {
@@ -96,7 +113,7 @@ ShellRoot {
     }
     if (root.mode === "closed") return
     var collection = panel.pageCollection()
-    check(panel.opened && panel.currentTab === "library", "populated fixture fell back to another page")
+    check(panel.opened && panel.currentTab === "library" && panel.pageReady, "populated fixture fell back to another page")
     check(collection && collection.listCount === root.rowCount
       && collection.sourceItems.length === root.rowCount, "populated library rows were not rendered: "
       + (collection ? collection.listCount + "/" + collection.sourceItems.length : "no collection"))
@@ -127,13 +144,23 @@ ShellRoot {
       }
       window.visible = root.mode !== "closed"
       // Allow the real page Loader and ListView to finish before asserting their state.
+      verifyReady.deadlineAt = Date.now() + 15000
       verifyReady.start()
     }
   }
   Timer {
     id: verifyReady
-    interval: 100
+    interval: 20; repeat: true
+    property double deadlineAt: 0
     onTriggered: {
+      root.check(Date.now() <= deadlineAt, "initial page did not become ready within 15 seconds")
+      if (root.mode === "mini") {
+        if (!miniLoader.item) return
+      } else if (root.mode !== "closed") {
+        root.check(panel.currentTab === "library", "initial fixture switched to an unexpected page")
+        if (!root.populatedPageReady()) return
+      }
+      stop()
       root.verifyFrame()
       if (root.mode === "closed-after-use") {
         panel.opened = false
@@ -143,11 +170,11 @@ ShellRoot {
       root.prepared = true
       root.verifyFrame()
       console.log("PERFORMANCE_READY")
-      if (!root.closedMode) {
+      if (root.mode === "navigation") root.beginNavigation()
+      else if (!root.closedMode) {
         feedback.expectedAt = Date.now() + feedback.interval
         feedback.start()
       }
-      if (root.mode === "navigation") navigation.start()
     }
   }
   Timer {
@@ -167,32 +194,70 @@ ShellRoot {
         panel.panelCursorRegion = "footer"
         panel.panelCursorAction = count % 2 ? "play" : "next"
       }
+      var finished = ++count >= 20 && (root.mode !== "navigation" || !navigation.running)
       Qt.callLater(function() {
         console.log("PERFORMANCE_FEEDBACK_MS " + (Date.now()-startedAt))
-        if (feedback.count >= 20) console.log("PERFORMANCE_FEEDBACK_DONE")
+        if (finished) console.log("PERFORMANCE_FEEDBACK_DONE")
       })
-      if (++count >= 20) stop()
+      if (finished) stop()
     }
   }
   IpcHandler {
     target: "benchmark"
-    function navigate(): string { root.cycle = 0; navigation.start(); return "ok" }
+    function navigate(): string { return root.beginNavigation() }
     function verify(): string { root.verifyFrame(); return "ok" }
   }
   Timer {
     id: navigation
-    interval: 50; repeat: true
+    interval: 20; repeat: true
+    property int phase: 0
+    property int searchPresented: 0
+    property int libraryPresented: 0
+    property double deadlineAt: 0
+    property double startedAt: 0
     onTriggered: {
-      if (root.cycle >= 20) { stop(); console.log("PERFORMANCE_NAVIGATION_DONE"); return }
-      var startedAt = Date.now()
-      // Alternate a large manually loaded collection with another route. No HTTP/auth.
-      service.activeView = "search"
-      panel.currentTab = "search"
-      service.activeView = "library"
-      panel.currentTab = "library"
-      root.populate()
+      root.check(root.httpAttempts === 0, "navigation attempted HTTP")
+      if (phase === 0) {
+        if (root.cycle >= 20) {
+          root.check(searchPresented === 20 && libraryPresented === 20, "navigation skipped a presented route")
+          stop()
+          console.log("PERFORMANCE_NAVIGATION_DONE")
+          return
+        }
+        startedAt = Date.now()
+        deadlineAt = startedAt + 15000
+        service.activeView = "search"
+        panel.currentTab = "search"
+        phase = 1
+        return
+      }
+      root.check(Date.now() <= deadlineAt, "navigation page did not become ready within 15 seconds")
+      if (phase === 1) {
+        root.check(panel.currentTab === "search", "Search route was cancelled or replaced")
+        if (!panel.pageReady) return
+        searchPresented++
+        console.log("PERFORMANCE_SEARCH_PRESENTED")
+        // Keep the loaded Search page through another event/frame before leaving it.
+        phase = 2
+        return
+      }
+      if (phase === 2) {
+        root.check(panel.currentTab === "search" && panel.pageReady, "Search disappeared before presentation")
+        service.activeView = "library"
+        root.populate()
+        panel.currentTab = "library"
+        deadlineAt = Date.now() + 15000
+        phase = 3
+        return
+      }
+      root.check(panel.currentTab === "library", "Library route was cancelled or replaced")
+      if (!root.populatedPageReady()) return
+      root.verifyFrame()
+      libraryPresented++
+      console.log("PERFORMANCE_LIBRARY_PRESENTED")
+      console.log("PERFORMANCE_NAVIGATION_MS " + (Date.now()-startedAt))
       root.cycle++
-      Qt.callLater(function() { console.log("PERFORMANCE_NAVIGATION_MS " + (Date.now()-startedAt)) })
+      phase = 0
     }
   }
 }

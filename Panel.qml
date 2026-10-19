@@ -19,6 +19,8 @@ Item {
   property real volumeBeforeMute: 0.5
   property double lastVolumeAdjustAt: 0
   property string currentTab: "home"
+  readonly property bool pageReady: pageLoader.status === Loader.Ready && pageLoader.item !== null
+    && pageLoader.sourceComponent === root.pageComponent()
   property bool openedForLogin: false
 
   property double searchClock: Date.now()

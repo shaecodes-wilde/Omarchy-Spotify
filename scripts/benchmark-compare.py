@@ -3,6 +3,7 @@
 import argparse
 import importlib.util
 import json
+import math
 import os
 from pathlib import Path
 import shutil
@@ -41,6 +42,15 @@ def run_case(tree, mode, count, args, output, name):
         for pattern in ('*.qml', '*.js'):
             for source in tree.glob(pattern):
                 shutil.copy2(source, plugin)
+        panel_path = plugin / 'Panel.qml'
+        panel_source = panel_path.read_text()
+        if 'readonly property bool pageReady:' not in panel_source:
+            # Give older base revisions the same read-only Loader observability.
+            anchor = '  id: root'
+            if anchor not in panel_source:
+                raise RuntimeError('cannot instrument baseline Panel readiness')
+            panel_source = panel_source.replace(anchor, anchor + '\n  readonly property bool pageReady: pageLoader.status === Loader.Ready && pageLoader.item !== null\n    && pageLoader.sourceComponent === root.pageComponent()', 1)
+            panel_path.write_text(panel_source)
         for directory in ('Commons', 'Ui'):
             shutil.copytree(Path('/usr/share/omarchy/shell') / directory, app / directory)
         shutil.copy2(HERE.parent / 'tests/integration/PerformanceFixture.qml', app / 'shell.qml')
@@ -98,6 +108,7 @@ def run_case(tree, mode, count, args, output, name):
                         subprocess.run(['qs', 'ipc', '--pid', str(pid), 'call', 'benchmark', 'navigate'],
                                        env=env, check=True, capture_output=True, timeout=10)
                         wait_for(log, 'PERFORMANCE_NAVIGATION_DONE', process, occurrences=sample_index+1)
+                        wait_for(log, 'PERFORMANCE_FEEDBACK_DONE', process, occurrences=sample_index+1)
                         time.sleep(args.settle)
                     _, memory, elapsed, cpu, switches = sampler.sample('fixture', args.seconds, pid)
                     samples.append(dict(pss_kib=memory['shell'][0], rss_kib=memory['shell'][1], cpu_percent=cpu, switches_per_second=switches, seconds=elapsed))
@@ -110,9 +121,9 @@ def run_case(tree, mode, count, args, output, name):
                 return dict(samples=samples, median={key: statistics.median(row[key] for row in samples) for key in samples[0]},
                             feedback_sample_count=len(feedback),
                             event_loop_lag_sample_count=len(event_loop_lag),
-                            event_loop_lag_p95_ms=sorted(event_loop_lag)[max(0, int(len(event_loop_lag)*.95)-1)] if event_loop_lag else None,
-                            feedback_p95_ms=sorted(feedback)[max(0, int(len(feedback)*.95)-1)] if feedback else None,
-                            navigation_p95_ms=sorted(navigation)[max(0, int(len(navigation)*.95)-1)] if navigation else None,
+                            event_loop_lag_p95_ms=sorted(event_loop_lag)[max(0, math.ceil(len(event_loop_lag)*.95)-1)] if event_loop_lag else None,
+                            feedback_p95_ms=sorted(feedback)[max(0, math.ceil(len(feedback)*.95)-1)] if feedback else None,
+                            navigation_p95_ms=sorted(navigation)[max(0, math.ceil(len(navigation)*.95)-1)] if navigation else None,
                             plateau_growth_kib=samples[-1]['pss_kib']-samples[0]['pss_kib'])
             finally:
                 import signal
