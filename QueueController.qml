@@ -227,13 +227,17 @@ Item {
     function finish(ok, error, unknown) {
       if (finished) return
       finished = true
-      if (serial === root.queueActionSerial) root.queueActionBusy = false
-      if (ok) root.host.succeed(added === 1 ? "Added to queue" : "Added " + added + " items to queue")
-      else root.host.fail((added ? "Added " + added + " of " + source.length + ". " : "")
-        + (error || "Could not add that item to the queue")
-        + (unknown ? ". The last item's outcome is unknown; check the queue before trying again" : ""))
-      if (added && account === root.host.dataSerial) root.loadQueue()
-      if (typeof callback === "function") callback(ok, added, error || "", unknown === true)
+      var current = serial === root.queueActionSerial && account === root.host.dataSerial
+      if (current) {
+        root.queueActionBusy = false
+        if (ok) root.host.succeed(added === 1 ? "Added to queue" : "Added " + added + " items to queue")
+        else root.host.fail((added ? "Added " + added + " of " + source.length + ". " : "")
+          + (error || "Could not add that item to the queue")
+          + (unknown ? ". The last item's outcome is unknown; check the queue before trying again" : ""))
+        if (added) root.loadQueue()
+      }
+      if (typeof callback === "function") callback(current && ok, added,
+        current ? (error || "") : "The playback session changed", unknown === true)
     }
     function next() {
       if (serial !== root.queueActionSerial || account !== root.host.dataSerial
@@ -242,6 +246,11 @@ Item {
         return
       }
       root.enqueueQueueItem(source[added], native, deviceId, function(ok, result, error, unknown) {
+        if (finished) return
+        if (serial !== root.queueActionSerial || account !== root.host.dataSerial) {
+          finish(false, "The playback session changed", unknown)
+          return
+        }
         if (!ok) { finish(false, error, unknown); return }
         added++
         if (added === source.length) finish(true, "", false)

@@ -15,6 +15,9 @@ ShellRoot {
       tests.replies.push(callback)
     }
   }
+  property var lifetimeReplies: []
+  property var lifetimeStatuses: []
+  property int lifetimeLoads: 0
   property var metadataCalls: []
   property var metadataReplies: []
   QtObject {
@@ -32,6 +35,10 @@ ShellRoot {
     property var lastQueue: ({next_tracks: [
       {uri:"spotify:track:visible"}, {uri:"spotify:track:hidden"}]})
     signal queueReceived(var queue)
+    function sendCommand(command, fields, callback) {
+      if (command !== "add_to_queue") throw new Error("Unexpected native queue command")
+      tests.lifetimeReplies.push(callback)
+    }
   }
   QtObject {
     id: metadataHost
@@ -46,8 +53,41 @@ ShellRoot {
     property var remotePlayback: null
     property string activeView: "home"
     property bool uiVisible: false
+    function controlDeviceId() { return "device" }
+    function noteActivity() {}
+    function succeed(message) { tests.lifetimeStatuses.push(message) }
+    function fail(message) { tests.lifetimeStatuses.push(message) }
   }
   Plugin.QueueController { id: metadataTest; host: metadataHost }
+  Plugin.QueueController {
+    id: lifetimeTest
+    host: metadataHost
+    function loadQueue(callback, serial) { tests.lifetimeLoads++ }
+  }
+  function checkNativeReplyLifetime(changeAccount, succeeds) {
+    lifetimeTest.reset()
+    tests.lifetimeReplies = []
+    tests.lifetimeStatuses = []
+    tests.lifetimeLoads = 0
+    var completed = 0
+    lifetimeTest.addToQueue({type:"track",uri:"spotify:track:old"}, function(ok, added, error, unknown) {
+      completed++
+      if (ok || added !== 0 || error.indexOf("changed") < 0)
+        throw new Error("Stale queue callback did not report cancellation")
+    })
+    var stale = tests.lifetimeReplies[0]
+    lifetimeTest.reset()
+    if (changeAccount) metadataHost.dataSerial++
+    lifetimeTest.addToQueue({type:"track",uri:"spotify:track:new"})
+    stale(succeeds, {}, succeeds ? "" : "Disconnected", !succeeds)
+    stale(succeeds, {}, "Repeated callback", !succeeds)
+    if (completed !== 1 || tests.lifetimeStatuses.length || tests.lifetimeLoads
+        || !lifetimeTest.queueActionBusy || tests.lifetimeReplies.length !== 2)
+      throw new Error("Stale native queue reply affected the current session")
+    tests.lifetimeReplies[1](true, {}, "", false)
+    if (tests.lifetimeStatuses.length !== 1 || tests.lifetimeLoads !== 1 || lifetimeTest.queueActionBusy)
+      throw new Error("Current native queue reply did not finish normally")
+  }
   Timer {
     interval: 20
     running: true
@@ -96,6 +136,10 @@ ShellRoot {
       tests.replies[1](false, null, "Disconnected", true)
       if (tests.calls.length !== 2 || callbacks !== 1 || queueTest.queueActionBusy)
         throw new Error("Uncertain queue action retried or completed more than once")
+      checkNativeReplyLifetime(false, true)
+      checkNativeReplyLifetime(false, false)
+      checkNativeReplyLifetime(true, true)
+      checkNativeReplyLifetime(true, false)
       if (tests.metadataCalls.length) throw new Error("Hidden queue requested metadata")
       metadataTest.setQueueVisibleItems("pane", [{type:"track",id:"visible",uri:"spotify:track:visible"}])
       if (tests.metadataCalls.join() !== "visible") throw new Error("Hidden metadata was included in batch")
