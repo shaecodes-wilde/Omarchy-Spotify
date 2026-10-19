@@ -28,7 +28,9 @@ qmllint -I /usr/share/omarchy/shell Api.js OAuth.js Discovery.js LastFmApi.qml L
   SpotifyApi.qml SearchController.qml FilterScanController.qml SpotifyConnectManager.qml DaemonManager.qml BackendClient.qml QueueController.qml Service.qml \
   BarWidget.qml PlaybackSlider.qml ArtistLinks.qml MediaByline.qml MediaRow.qml MediaCollection.qml \
   ArtistSearchSection.qml LyricsInstallPrompt.qml RetryImage.qml ShortcutHint.qml \
-  TransportButton.qml Panel.qml
+  TransportButton.qml Panel.qml Navigation.js Selection.js PlaylistActions.qml PlaylistEditor.qml \
+  DesktopKeyHint.qml DesktopSidebar.qml HomeOverview.qml HomePage.qml MixedSearchResults.qml \
+  NowPlayingPane.qml QueuePage.qml SearchPage.qml
 
 QT_QPA_PLATFORM=offscreen "$qml_test_runner" \
   -input tests \
@@ -38,6 +40,7 @@ QT_QPA_PLATFORM=offscreen "$qml_test_runner" \
 PYTHONDONTWRITEBYTECODE=1 python3 "$source_root/tests/test_connect_helper.py"
 "$source_root/tests/test-scripts.sh"
 "$source_root/scripts/test-quickshell.sh"
+"$source_root/scripts/test-desktop.sh"
 
 if rg -n 'QtWebEngine|WebEngineView|WebView|playerctl|node_modules' \
   --glob '*.qml' --glob '*.js' --glob '*.sh' --glob '*.service' \

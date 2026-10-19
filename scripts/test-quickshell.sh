@@ -116,3 +116,15 @@ if rg -i 'ReferenceError|TypeError|binding loop|Cannot assign|Unable to assign|F
 fi
 echo 'Quickshell resource policy integration passed.'
 python3 "$source_root/tests/test_benchmark_processes.py"
+
+cp "$source_root/tests/integration/TrackTable.qml" "$test_root/app/shell.qml"
+env -u WAYLAND_DISPLAY QT_QPA_PLATFORM=offscreen QT_QPA_PLATFORMTHEME=generic NO_AT_BRIDGE=1 XDG_STATE_HOME="$test_root/state" \
+  timeout 15s dbus-run-session -- qs --no-color -p "$test_root/app" > "$test_root/track-table-output" 2>&1 || {
+  cat "$test_root/track-table-output"
+  exit 1
+}
+rg -q TRACK_TABLE_PASS "$test_root/track-table-output" || { cat "$test_root/track-table-output"; exit 1; }
+if rg -i 'ReferenceError|TypeError|binding loop|Cannot assign|Unable to assign|Failed to load configuration' "$test_root/track-table-output"; then
+  exit 1
+fi
+echo 'Quickshell track table integration passed.'

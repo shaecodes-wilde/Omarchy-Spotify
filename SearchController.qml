@@ -5,6 +5,9 @@ Item {
   id: root
   required property var api
   property int dataSerial: 0
+  property bool active: true
+  property var restoreTarget: null
+  onActiveChanged: if (!active) cancelSearch(false)
   signal rememberSearch(string term)
   signal checkSavedItems(var items)
   function safeError(error) { return Api.redact(error) }
@@ -84,7 +87,7 @@ Item {
       if (root.searchQuery !== normalized) return
       root.searchLoading = false
       root.searchPendingType = ""
-      if (error) root.searchError = root.safeError(error)
+      if (error) { root.searchError = root.safeError(error); root.restoreTarget = null }
       else {
         var incoming = ({})
         incoming[value] = groups[value]
@@ -95,6 +98,7 @@ Item {
         root.searchError = ""
         root.rememberSearch(normalized)
         root.checkSavedItems(root.searchItems(value))
+        root.continueRestore()
       }
     })
   }
@@ -198,18 +202,44 @@ Item {
       root.pageRequest = null
       root.searchLoading = false
       root.searchPendingType = ""
-      if (error) { root.searchError = root.safeError(error); return }
+      if (error) { root.searchError = root.safeError(error); root.restoreTarget = null; return }
       var incoming = ({})
       incoming[value] = Api.normalizeSearchPage(payload, value, 128)
       var merged = Api.mergeSearchGroups(root.searchGroups, incoming)
       root.searchGroups = merged
       root.searchError = ""
       root.checkSavedItems(root.searchItems(value))
+      root.continueRestore()
     }, {
       priority: "interactive",
       timeoutMs: Api.SEARCH_REQUEST_TIMEOUT_MS,
       retryRateLimit: false
     })
+  }
+
+  function ensureItemCount(query, type, count) {
+    var target = Math.min(10000, Math.max(0, Math.floor(Number(count) || 0)))
+    if (!active || type === "all" || searchQuery !== query || searchActiveType !== type
+        || target <= searchItems(type).length || (!searchLoading && searchError)) return false
+    restoreTarget = { query: query, type: type, count: target }
+    continueRestore()
+    return restorePending(query, type)
+  }
+
+  function restorePending(query, type) {
+    return !!restoreTarget && restoreTarget.query === query && restoreTarget.type === type
+      && searchItems(type).length < restoreTarget.count
+  }
+
+  function continueRestore() {
+    var target = restoreTarget
+    if (!target || searchLoading) return
+    if (!active || target.query !== searchQuery || target.type !== searchActiveType
+        || searchItems(target.type).length >= target.count || !searchNext(target.type)) {
+      restoreTarget = null
+      return
+    }
+    loadMoreSearch(target.type)
   }
 
   function retrySearch(type) {
@@ -222,6 +252,7 @@ Item {
   }
 
   function clearSearch() {
+    restoreTarget = null
     searchGeneration++
     cancelOverview()
     api.cancelSearch()
@@ -238,6 +269,7 @@ Item {
   }
 
   function cancelSearch(clearResults) {
+    restoreTarget = null
     searchGeneration++
     cancelOverview()
     api.cancelSearch()

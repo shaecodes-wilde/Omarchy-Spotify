@@ -101,8 +101,10 @@ Item {
   signal batchPlaylistRequested(var items)
   signal batchSaveRequested(var items)
   signal batchRemoveRequested(var items)
+  signal listInteracted()
+  readonly property var selectedRows: selectionCount ? Selection.items(sourceItems, selection) : []
 
-  function selectedItems() { return Selection.items(sourceItems, selection) }
+  function selectedItems() { return selectedRows }
   function isSelected(item) {
     if (selectionCount === 0) return false
     return selection[Selection.key(item)] === true
@@ -117,6 +119,7 @@ Item {
       (modifiers & Qt.ShiftModifier) !== 0)
     if ((modifiers & Qt.ShiftModifier) === 0 || selectionAnchor < 0) selectionAnchor = index
     mediaList.currentIndex = index
+    listInteracted()
     mediaList.forceActiveFocus()
   }
   function selectAll() {

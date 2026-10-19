@@ -13,7 +13,8 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def check_case(case):
-    with tempfile.TemporaryDirectory(prefix="spotify-backend-test-") as directory:
+    # Unix socket paths must fit even when TMPDIR is a long build-cache path.
+    with tempfile.TemporaryDirectory(prefix="sp-socket-", dir="/tmp") as directory:
         test = Path(directory)
         (test / "omarchy-spotify").mkdir()
         for name in ("BackendClient.qml", "Api.js"):

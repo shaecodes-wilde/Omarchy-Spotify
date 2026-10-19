@@ -512,6 +512,7 @@ Item {
   readonly property int cacheLimit: 200
   property string activeLibraryKind: "tracks"
   property var retainedLibraryPages: ({})
+  property var libraryRestoreTargets: ({})
   property var retainedPlaylistPage: null
   property var retainedDetailPage: null
 
@@ -560,7 +561,36 @@ Item {
     })
   }
 
-  onActiveViewChanged: trimInactiveLibraryCollections()
+  onActiveViewChanged: {
+    if (activeView !== "library") libraryRestoreTargets = ({})
+    trimInactiveLibraryCollections()
+  }
+
+  function libraryRestorePending(kind) {
+    return Number(libraryRestoreTargets[kind] || 0) > libraryItems(kind).length
+  }
+
+  function ensureLibraryItemCount(kind, count) {
+    var target = Math.min(10000, Math.max(0, Math.floor(Number(count) || 0)))
+    if (!uiVisible || activeView !== "library" || activeLibraryKind !== kind) return false
+    var next = Object.assign({}, libraryRestoreTargets)
+    if (target > libraryItems(kind).length) next[kind] = target
+    else delete next[kind]
+    libraryRestoreTargets = next
+    continueLibraryRestore(kind)
+    return libraryRestorePending(kind)
+  }
+
+  function continueLibraryRestore(kind) {
+    if (!uiVisible || activeView !== "library" || activeLibraryKind !== kind || libraryLoading(kind)) return
+    if (!libraryRestorePending(kind) || !libraryNext(kind)) {
+      var next = Object.assign({}, libraryRestoreTargets)
+      delete next[kind]
+      libraryRestoreTargets = next
+      return
+    }
+    loadLibraryCollection(kind, true)
+  }
 
   signal operationFailed(string reason)
   signal radioPlaylistReady(var playlist)
@@ -1583,7 +1613,12 @@ Item {
       function(status, payload, error) {
         if (expected !== root.dataSerial) return
         root[spec.loading] = false
-        if (error) root.fail(error)
+        if (error) {
+          var targets = Object.assign({}, root.libraryRestoreTargets)
+          delete targets[kind]
+          root.libraryRestoreTargets = targets
+          root.fail(error)
+        }
         else {
           var mapper = root.libraryMapper(spec.mapper)
           var page = spec.cursor
@@ -1597,6 +1632,7 @@ Item {
           root[spec.loaded] = true
           root.retainLibraryPage(kind)
           root.trimInactiveLibraryCollections()
+          root.continueLibraryRestore(kind)
           if (spec.checkSaved === true) root.checkSavedItems(page.items)
           else root.markItemsSaved(page.items, true)
           if (spec.mergeDiscover === true
@@ -2698,6 +2734,7 @@ Item {
     id: searchController
     api: spotifyApi
     dataSerial: root.dataSerial
+    active: root.uiVisible
     onRememberSearch: term => root.rememberSearch(term)
     onCheckSavedItems: items => root.checkSavedItems(items)
   }
@@ -2745,6 +2782,8 @@ Item {
   function searchItems(type) { return searchController.searchItems(type) }
   function searchNext(type) { return searchController.searchNext(type) }
   function searchAll(term, force) { searchController.searchAll(term, force) }
+  function ensureSearchItemCount(query, type, count) { return searchController.ensureItemCount(query, type, count) }
+  function searchRestorePending(query, type) { return searchController.restorePending(query, type) }
   function loadMoreSearch(type) { return searchController.loadMoreSearch(type) }
   function retrySearch(type) { return searchController.retrySearch(type) }
   function clearSearch() { return searchController.clearSearch() }
@@ -3559,6 +3598,7 @@ Item {
     playlistsLoaded = false
     playlistsNext = ""
     retainedLibraryPages = ({})
+    libraryRestoreTargets = ({})
     retainedPlaylistPage = null
     retainedDetailPage = null
     savedTracks = []
@@ -3696,6 +3736,7 @@ Item {
       updateSleepCountdown()
     }
     else {
+      libraryRestoreTargets = ({})
       cancelVisibleLocalDeviceRefresh()
       trimInactiveLibraryCollections()
       trimHiddenDetailCollections()
