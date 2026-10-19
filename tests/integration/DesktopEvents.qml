@@ -9,11 +9,18 @@ ShellRoot {
   property int stage: 0
   property bool narrowWindow: Quickshell.env("SPOTIFY_DESKTOP_NARROW") === "1"
   property var panelWindow: null
+  property int readinessAttempts: 0
   property var driver: null
   property var queueList: null
   property string screenshotDirectory: Quickshell.env("SPOTIFY_DESKTOP_SCREENSHOTS") || ""
   function check(value, message) {
     if (!value) { run.stop(); console.error("DESKTOP_EVENTS_FAIL: " + message); Qt.quit(); throw new Error(message) }
+  }
+  function ready(value, message) {
+    if (value) { readinessAttempts = 0; return true }
+    readinessAttempts++
+    check(readinessAttempts <= 40, message)
+    return false
   }
   function find(item, predicate) {
     if (!item) return null
@@ -56,6 +63,7 @@ ShellRoot {
     id: spotify
     manifest: ({__sourceDir:"/nonexistent"})
     property int playCalls: 0
+    property var playlistAdds: []
     property var resolvedQueueRows: []
     function setDiscoverySurfaceVisible(key, visible) { }
     function selectHomeTab(tab) { }
@@ -64,6 +72,7 @@ ShellRoot {
     function loadLibrary(type, append, force) { }
     function checkSavedItems(items) { }
     function playItem(item, items, uri, message) { playCalls++ }
+    function addItemsToPlaylist(items, playlist) { playlistAdds = items.slice() }
     function loadQueue() { }
     function setQueueVisibleItems(surface, items) { resolvedQueueRows = items }
     function searchAll(query, force) { }
@@ -90,6 +99,8 @@ ShellRoot {
         saved[0].name = "Northern Lights over the Harbour — a long title that should leave the duration visible"
         spotify.savedTracks = saved
         spotify.savedTracksLoaded = true
+        spotify.currentUserId = "owner"
+        spotify.playlists = [{kind:"context", type:"playlist", id:"target", uri:"spotify:playlist:target", name:"Road trip", ownerId:"owner"}]
         spotify.recentTracks = tracks(3)
         spotify.queue = tracks(100)
         for (var i=0; i<panel.data.length; i++)
@@ -111,7 +122,7 @@ ShellRoot {
         check(probe.albumColumn && probe.dateColumn, "1150px table should show album and date")
         probe.destroy()
       } else if (stage === 1) {
-        check(!!row(0), "Track delegate not rendered")
+        if (!ready(!!row(0), "Track delegate not rendered")) return
         var duration = find(row(0), function(item) { return item.objectName === "media-row-duration" })
         check(duration && duration.visible, "Long compact title hid the duration")
         driver.mouseClick(row(0), 120, row(0).height / 3, Qt.LeftButton, Qt.NoModifier)
@@ -131,6 +142,19 @@ ShellRoot {
         check(panel.pageCollection().listCurrentIndex === 1, "Shift+Down did not move to the adjacent row")
         check(spotify.playCalls === 1, "Shift selection started playback")
         capture("library-wide-selection")
+        if (!narrowWindow) {
+          var target = find(panelWindow.contentItem, function(item) { return item.text === "Road trip" && typeof item.clicked === "function" })
+          check(!!target, "Sidebar drop target is missing")
+          var source = row(0)
+          var destination = target.mapToItem(source, target.width / 2, target.height / 2)
+          driver.keyPress(Qt.Key_Control)
+          driver.mousePress(source, 120, source.height / 3, Qt.LeftButton, Qt.ControlModifier)
+          driver.mouseMove(source, 140, source.height / 3, 20, Qt.LeftButton, Qt.ControlModifier)
+          driver.mouseMove(source, destination.x, destination.y, 20, Qt.LeftButton, Qt.ControlModifier)
+          driver.mouseRelease(source, destination.x, destination.y, Qt.LeftButton, Qt.ControlModifier)
+          driver.keyRelease(Qt.Key_Control)
+          check(spotify.playlistAdds.length === 2, "Ctrl-drag did not add the selected rows to the sidebar playlist")
+        }
         if (Quickshell.env("SPOTIFY_DESKTOP_KEEP_HINTS") === "0") panel.clearShortcutMode()
         panel.libraryType = "albums"
         panel.currentTab = "home"
@@ -141,7 +165,7 @@ ShellRoot {
           return item.text === "Show all" && item.parent && item.parent.parent
             && item.parent.parent.modelData && item.parent.parent.modelData.type === "saved"
         })
-        check(!!savedMore, "Saved shelf Show all is missing")
+        if (!ready(!!savedMore, "Saved shelf Show all is missing")) return
         if (!narrowWindow) {
           driver.mouseClick(savedMore, savedMore.width / 2, savedMore.height / 2)
           check(panel.currentTab === "library" && panel.libraryType === "tracks", "Saved shelf opened the wrong library category")
@@ -156,20 +180,23 @@ ShellRoot {
           album:{items:[{kind:"context", type:"album", id:"album", uri:"spotify:album:album", name:"Coastal Lines", subtitle:"Harbour Sessions"}], next:""}
         })
       } else if (stage === 6) {
+        if (!ready(panel.pageCollections().length === 3, "Mixed search did not finish loading")) return
         capture("search-all-wide")
         panel.currentTab = "home"
         panel.toggleRightPane("queue")
       } else if (stage === 7) {
+        var drawer = find(panelWindow.contentItem, function(item) { return item.objectName === "spotify-right-pane-loader" })
+        if (!narrowWindow && !ready(drawer && drawer.status === Loader.Ready, "Queue drawer did not finish loading")) return
         capture("queue-pane-wide")
         panel.toggleRightPane("queue")
         panel.currentTab = "queue"
       } else if (stage === 8) {
         queueList = panel.pageListView()
-        check(!!queueList, "Queue list not loaded")
+        if (!ready(!!queueList, "Queue list not loaded")) return
         queueList.currentIndex = 50
         queueList.positionViewAtIndex(50, ListView.Beginning)
       } else if (stage === 9) {
-        check(!!queueList.itemAtIndex(50), "Scrolled queue row not instantiated")
+        if (!ready(!!queueList.itemAtIndex(50), "Scrolled queue row not instantiated")) return
         queueList.contentY = queueList.itemAtIndex(50).y - queueList.spacing + 1
         check(queueList.indexAt(queueList.width / 2, queueList.contentY + 1) < 0, "Queue test did not start inside spacing")
       } else if (stage === 10) {
@@ -181,11 +208,12 @@ ShellRoot {
         panel.currentTab = "library"
         if (narrowWindow) check(panelWindow.width === 700, "Narrow layout did not use its initial size")
       } else if (stage === 12) {
+        if (!ready(panel.pageCollections().length === 1, "Library did not finish loading")) return
         capture("library-narrow")
         spotify.savedTracks = []
       } else if (stage === 13) {
         capture("library-empty")
-        console.log("DESKTOP_EVENTS_PASS: mouse->Enter; mouse->Shift+Down; queue spacing and tail")
+        console.log("DESKTOP_EVENTS_PASS: mouse->Enter; mouse->Shift+Down; Ctrl-drag; queue spacing and tail")
         Qt.quit()
       }
       stage++

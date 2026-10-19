@@ -6,6 +6,7 @@ ShellRoot {
   id: testCase
   property var panelWindow: null
   property int stage: 0
+  property int readinessAttempts: 0
   property var playlist: ({kind:"context", type:"playlist", id:"deep", uri:"spotify:playlist:deep", name:"Deep playlist"})
   property var album: ({kind:"context", type:"album", id:"album", uri:"spotify:album:album", name:"Album"})
   function check(value, message) {
@@ -15,6 +16,12 @@ ShellRoot {
       Qt.quit()
       throw new Error(message)
     }
+  }
+  function ready(value, message) {
+    if (value) { readinessAttempts = 0; return true }
+    readinessAttempts++
+    check(readinessAttempts <= 40, message)
+    return false
   }
   function tracks(count) {
     var result = []
@@ -91,7 +98,7 @@ ShellRoot {
         panel.currentTab = "home"
         panel.homeType = "overview"
       } else if (stage === 1) {
-        check(panel.pageCollections().length === 2, "Cached Home shelves are missing")
+        if (!ready(panel.pageCollections().length === 2, "Cached Home shelves are missing")) return
         panel.openItem(playlist)
         spotifyService.detailItems = tracks(750)
         spotifyService.detailRestoreTargetCount = 750
@@ -101,6 +108,7 @@ ShellRoot {
         panel.panelCursorAction = "list"
         panel.panelCursorActive = true
       } else if (stage === 2) {
+        if (!ready(panel.pageCollection() && panel.pageCollection().listCount > 630, "Deep playlist did not finish loading")) return
         panel.pageCollection().restoreCurrentIndex(630)
         panel.rememberScroll("detail:spotify:playlist:deep", 12000)
         panel.openItem(album)
@@ -111,6 +119,7 @@ ShellRoot {
         check(spotifyService.receivedRestoreCount === 750, "Back lost the loaded playlist target")
         check(panel.detailFilter === "Track" && panel.detailSort === "name", "Back lost filter/sort")
       } else if (stage === 4) {
+        if (!ready(!!panel.pageCollection(), "Back did not finish loading its page")) return
         if (panel.pendingFocusIndex >= 0 && panel.focusRestoreAttempts < 20) return
         check(panel.pageCollection().listCurrentIndex === 630, "Back lost focused row: "
           + panel.pageCollection().listCurrentIndex + ", pending " + panel.pendingFocusIndex
@@ -136,12 +145,12 @@ ShellRoot {
         panel.toggleRightPane("now-playing")
       } else if (stage === 5) {
         var drawer = loader("spotify-right-pane-loader")
-        check(drawer.active && !!drawer.item, "Now playing drawer did not load")
+        if (!ready(drawer.active && !!drawer.item, "Now playing drawer did not load")) return
         check(drawer.item.toString().indexOf("NowPlayingPane") >= 0, "Wrong drawer component")
           panel.toggleRightPane("queue")
           spotifyService.queue = tracks(80)
       } else if (stage === 6) {
-        check(loader("spotify-right-pane-loader").item.drawer, "Queue did not replace Now playing")
+        if (!ready(loader("spotify-right-pane-loader").item && loader("spotify-right-pane-loader").item.drawer, "Queue did not replace Now playing")) return
         check(spotifyService.visibleQueueItems.length > 0 && spotifyService.visibleQueueItems.length <= 50,
           "Queue metadata was not bounded to visible rows")
         panel.toggleRightPane("queue")

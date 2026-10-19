@@ -3954,6 +3954,7 @@ Item {
             Loader {
               id: pageLoader
               objectName: "spotify-page-loader"
+              asynchronous: true
               active: root.opened
               anchors.left: parent.left
               anchors.right: parent.right
@@ -3968,6 +3969,7 @@ Item {
           Loader {
             id: rightPaneLoader
             objectName: "spotify-right-pane-loader"
+            asynchronous: true
             active: root.opened && root.currentTab !== "login"
               && !root.compactWidth && root.rightPane !== ""
               && !(root.currentTab === "queue" && root.rightPane === "queue")
