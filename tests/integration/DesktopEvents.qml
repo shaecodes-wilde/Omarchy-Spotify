@@ -7,6 +7,7 @@ import "plugin" as Plugin
 ShellRoot {
   id: fixture
   property int stage: 0
+  property bool narrowWindow: Quickshell.env("SPOTIFY_DESKTOP_NARROW") === "1"
   property var panelWindow: null
   property var driver: null
   property var queueList: null
@@ -37,6 +38,8 @@ ShellRoot {
     return result
   }
   function capture(name) {
+    if (narrowWindow && name !== "library-narrow") return
+    if (!narrowWindow && name === "library-narrow") return
     if (screenshotDirectory) driver.grabImage(panelWindow.contentItem.children[0]).save(screenshotDirectory + "/" + name + ".png")
   }
   function readableTheme() {
@@ -66,6 +69,10 @@ ShellRoot {
     function searchAll(query, force) { }
   }
   Plugin.Panel { id: panel; service: spotify }
+  Component {
+    id: columnProbe
+    Plugin.MediaCollection { service:spotify; sourceItems:spotify.savedTracks; width:700; height:400; visible:false }
+  }
   Component { id: eventDriver; TestCase { name:"DesktopNativeEvents"; when:false } }
   Component { id: imageUnderlay; Rectangle { color:Color.background; z:-1000; anchors.fill:parent } }
   Timer {
@@ -74,20 +81,21 @@ ShellRoot {
     repeat: true
     running: true
     onTriggered: {
-      console.log("DESKTOP_EVENT_STAGE", stage, Date.now())
       if (stage === 0) {
         spotify.auth.customClientId = "invalid"
         spotify.auth.sessionChecked = true
         spotify.auth.loggedIn = true
         spotify.settings = Object.assign({}, spotify.settings, {showArtwork:"Off"})
-        spotify.savedTracks = tracks(12)
+        var saved = tracks(12)
+        saved[0].name = "Northern Lights over the Harbour — a long title that should leave the duration visible"
+        spotify.savedTracks = saved
         spotify.savedTracksLoaded = true
         spotify.recentTracks = tracks(3)
         spotify.queue = tracks(100)
         for (var i=0; i<panel.data.length; i++)
           if (panel.data[i].objectName === "spotify-panel-window") panelWindow = panel.data[i]
         check(!!panelWindow, "Missing panel window")
-        panelWindow.implicitWidth = 1280
+        panelWindow.implicitWidth = narrowWindow ? 700 : 1280
         panelWindow.implicitHeight = 800
         panel.opened = true
         panel.currentTab = "library"
@@ -95,8 +103,17 @@ ShellRoot {
         driver = eventDriver.createObject(panelWindow.contentItem.children[0])
         imageUnderlay.createObject(panelWindow.contentItem.children[0])
         readableTheme()
+        var probe = columnProbe.createObject(panel)
+        check(probe.albumColumn && !probe.dateColumn, "700px table should show album but not date")
+        probe.width = 560
+        check(!probe.albumColumn && !probe.dateColumn, "560px table should hide album and date")
+        probe.width = 1150
+        check(probe.albumColumn && probe.dateColumn, "1150px table should show album and date")
+        probe.destroy()
       } else if (stage === 1) {
         check(!!row(0), "Track delegate not rendered")
+        var duration = find(row(0), function(item) { return item.objectName === "media-row-duration" })
+        check(duration && duration.visible, "Long compact title hid the duration")
         driver.mouseClick(row(0), 120, row(0).height / 3, Qt.LeftButton, Qt.NoModifier)
       } else if (stage === 2) {
         check(panel.pageCollection().selectionCount === 1, "Mouse click did not select a row")
@@ -114,11 +131,19 @@ ShellRoot {
         check(panel.pageCollection().listCurrentIndex === 1, "Shift+Down did not move to the adjacent row")
         check(spotify.playCalls === 1, "Shift selection started playback")
         capture("library-wide-selection")
-        if (Quickshell.env("SPOTIFY_DESKTOP_KEEP_HINTS") !== "1") panel.clearShortcutMode()
+        if (Quickshell.env("SPOTIFY_DESKTOP_KEEP_HINTS") === "0") panel.clearShortcutMode()
+        panel.libraryType = "albums"
         panel.currentTab = "home"
         panel.homeType = "overview"
       } else if (stage === 5) {
         capture("home-wide")
+        var savedMore = find(panelWindow.contentItem, function(item) {
+          return item.text === "Show all" && item.parent && item.parent.parent
+            && item.parent.parent.modelData && item.parent.parent.modelData.type === "saved"
+        })
+        check(!!savedMore, "Saved shelf Show all is missing")
+        driver.mouseClick(savedMore, savedMore.width / 2, savedMore.height / 2)
+        check(panel.currentTab === "library" && panel.libraryType === "tracks", "Saved shelf opened the wrong library category")
         panel.currentTab = "search"
         panel.searchType = "all"
         panel.searchText = "Coast"
@@ -152,7 +177,7 @@ ShellRoot {
       } else if (stage === 11) {
         check(spotify.resolvedQueueRows[spotify.resolvedQueueRows.length - 1].uri === "spotify:track:99", "Queue tail omitted the last visible row")
         panel.currentTab = "library"
-        panelWindow.implicitWidth = 700
+        if (narrowWindow) check(panelWindow.width === 700, "Narrow layout did not use its initial size")
       } else if (stage === 12) {
         capture("library-narrow")
         spotify.savedTracks = []

@@ -51,6 +51,7 @@ Item {
   property var scrollPositionOrder: []
   readonly property int scrollPositionLimit: 128
   property var navigationStack: []
+  property var registeredCollections: []
   property var forwardStack: []
   property real sidebarWidth: 214
   property bool sidebarCollapsed: false
@@ -993,23 +994,30 @@ Item {
     return null
   }
 
-  function findNamedItems(item, name, found) {
-    var results = found || []
-    if (!item || item.visible === false) return results
-    if (item.objectName === name) results.push(item)
-    var kids = item.children
-    if (!kids) return results
-    for (var i = 0; i < kids.length; i++)
-      findNamedItems(kids[i], name, results)
-    return results
+  function registerCollection(collection) {
+    if (!collection || registeredCollections.indexOf(collection) >= 0) return
+    registeredCollections = registeredCollections.concat([collection])
+    Qt.callLater(syncCollectionCursor)
   }
 
-  function pageCollection() {
-    return findNamedItem(pageLoader.item, "media-collection")
+  function unregisterCollection(collection) {
+    registeredCollections = registeredCollections.filter(function(value) { return value !== collection })
   }
 
   function pageCollections() {
-    return findNamedItems(pageLoader.item, "media-collection")
+    return registeredCollections.filter(function(collection) {
+      if (!collection || !collection.visible) return false
+      var item = collection
+      while (item) {
+        if (item === pageLoader.item) return true
+        item = item.parent
+      }
+      return false
+    })
+  }
+
+  function pageCollection() {
+    return pageCollections()[0] || null
   }
 
   function pageListView() {
@@ -4547,6 +4555,7 @@ Item {
 
     Item {
       MediaCollection {
+        navigationOwner: root
         anchors.fill: parent
         service: root.service
         onBatchQueueRequested: function(items) { if (root.service) root.service.addItemsToQueue(items) }
@@ -4848,6 +4857,7 @@ Item {
               }
 
               MediaCollection {
+        navigationOwner: root
                 width: parent.width
                 height: Math.max(30, parent.height - artistAlbumsHeading.height
                   - parent.spacing)
@@ -4897,6 +4907,7 @@ Item {
               }
 
               MediaCollection {
+        navigationOwner: root
                 width: parent.width
                 height: Math.max(30, parent.height - artistSongsHeading.height
                   - artistThisIsRow.height - parent.spacing
@@ -5168,6 +5179,7 @@ Item {
         }
 
         MediaCollection {
+        navigationOwner: root
           id: detailCollection
           width: parent.width
           height: Math.max(40, parent.height - detailHero.height - detailNotice.height
@@ -5279,6 +5291,7 @@ Item {
         }
 
         MediaCollection {
+        navigationOwner: root
           id: libraryCollection
           restoreReady: !root.service || !root.service.libraryRestorePending(root.libraryType)
           width: parent.width
@@ -5453,6 +5466,7 @@ Item {
         }
 
         MediaCollection {
+        navigationOwner: root
           id: playlistItemsCollection
           width: parent.width
           height: Math.max(40, parent.height - selectedPlaylistHeader.height - parent.spacing)

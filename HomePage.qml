@@ -116,6 +116,7 @@ Item {
           visible: active
           sourceComponent: Component {
             MediaCollection {
+          navigationOwner: panel
           anchors.fill: parent
           service: panel.service
           onBatchQueueRequested: function(items) { if (panel.service) panel.service.addItemsToQueue(items) }

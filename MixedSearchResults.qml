@@ -38,6 +38,7 @@ ScrollView {
           }
         }
         MediaCollection {
+          navigationOwner: controller
           enableSelection: false
           width: parent.width
           height: parent.items.length ? Style.space(66) * parent.items.length : Style.space(44)

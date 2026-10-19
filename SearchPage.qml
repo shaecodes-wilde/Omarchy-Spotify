@@ -161,6 +161,7 @@ import "Api.js" as Api
           visible: active
           sourceComponent: Component {
         MediaCollection {
+          navigationOwner: panel
           id: resultsView
           anchors.fill: parent
           service: panel.service

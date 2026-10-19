@@ -9,6 +9,7 @@ import "Selection.js" as Selection
 Item {
   id: root
   objectName: "media-collection"
+  property var navigationOwner: null
 
   required property var service
   property var sourceItems: []
@@ -71,8 +72,8 @@ Item {
     || service.settings.trackDensity !== "Comfortable"
   readonly property string columns: service && service.settings
     ? String(service.settings.trackColumns || "Album + date") : "Album + date"
-  readonly property bool albumColumn: trackTable && width >= Style.space(860) && columns !== "Title only"
-  readonly property bool dateColumn: albumColumn && width >= Style.space(1100) && columns === "Album + date"
+  readonly property bool albumColumn: trackTable && width >= Style.space(600) && columns !== "Title only"
+  readonly property bool dateColumn: albumColumn && width >= Style.space(850) && columns === "Album + date"
 
   readonly property var visibleItems: Api.filteredSorted(sourceItems, filterText, sortKey)
   readonly property bool playbackUsesVisibleOrder: Api.playbackUsesVisibleOrder(
@@ -342,7 +343,10 @@ Item {
     }
   }
 
-  Component.onCompleted: restoreView()
+  Component.onCompleted: {
+    restoreView()
+    if (navigationOwner) navigationOwner.registerCollection(root)
+  }
   onSourceItemsChanged: selection = Selection.retain(sourceItems, selection)
   onFilterTextChanged: clearSelection()
   onSortKeyChanged: clearSelection()
@@ -350,7 +354,10 @@ Item {
   onStateKeyChanged: resetRestore()
   onRestoreReadyChanged: if (restoreReady) resetRestore()
   onCanReorderChanged: if (!canReorder) cancelReorder()
-  Component.onDestruction: rememberView()
+  Component.onDestruction: {
+    if (navigationOwner) navigationOwner.unregisterCollection(root)
+    rememberView()
+  }
 
   Timer {
     interval: 30

@@ -68,7 +68,7 @@ ScrollView {
             text: modelData.type === "gems" && !parent.parent.items.length ? "Discover" : "Show all"
             foreground: controller.foreground
             onClicked: {
-              if (modelData.type === "saved") controller.chooseTab("library")
+              if (modelData.type === "saved") { controller.libraryType = "tracks"; controller.chooseTab("library") }
               else controller.homeType = modelData.type
             }
           }
@@ -83,6 +83,7 @@ ScrollView {
           font.pixelSize: Style.font.caption
         }
         MediaCollection {
+          navigationOwner: controller
           enableSelection: false
           width: parent.width
           height: parent.items.length ? Style.space(66) * parent.items.length : 0
