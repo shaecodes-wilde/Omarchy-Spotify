@@ -42,6 +42,20 @@ if rg -i 'ReferenceError|TypeError|binding loop|Cannot assign|Unable to assign|F
 fi
 echo 'Quickshell app smoke test passed.'
 
+PYTHONDONTWRITEBYTECODE=1 python3 "$source_root/tests/test_backend_client.py"
+cp "$source_root/tests/integration/QueueState.qml" "$test_root/app/shell.qml"
+env -u WAYLAND_DISPLAY QT_QPA_PLATFORM=offscreen QT_QPA_PLATFORMTHEME=generic NO_AT_BRIDGE=1 XDG_STATE_HOME="$test_root/state" \
+  timeout 15s dbus-run-session -- qs --no-color -p "$test_root/app" > "$test_root/queue-output" 2>&1 || {
+  cat "$test_root/queue-output"
+  exit 1
+}
+rg -q QUEUE_STATE_PASS "$test_root/queue-output" || {
+  cat "$test_root/queue-output"
+  exit 1
+}
+echo 'Quickshell queue state integration passed.'
+
+
 cp "$source_root/tests/integration/DiscoveryPipeline.qml" "$test_root/app/shell.qml"
 env -u WAYLAND_DISPLAY QT_QPA_PLATFORM=offscreen QT_QPA_PLATFORMTHEME=generic NO_AT_BRIDGE=1 XDG_STATE_HOME="$test_root/state" \
   timeout 15s dbus-run-session -- qs --no-color -p "$test_root/app" > "$test_root/discovery-output" 2>&1 || {

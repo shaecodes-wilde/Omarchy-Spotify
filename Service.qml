@@ -313,6 +313,27 @@ Item {
     selectedPlaylist, playlistItems.length, playlistItemsError,
     playlistItemsStatus, currentUserId)
   property var queue: []
+  readonly property bool nativeQueueActive: backendClient.ready && !useRemotePlayback
+    && backendClient.capabilities.queue_snapshot === true
+  readonly property string queueSource: nativeQueueActive ? "native" : "web"
+  readonly property bool queueCanActivate: false
+  readonly property bool queueCanEdit: false
+  readonly property string queueUnavailableReason: "Spotify does not expose context-preserving queue jump, reorder, remove, or clear controls for this receiver"
+  readonly property string queueContextUri: nativeQueueActive && backendClient.lastQueue
+    ? String(backendClient.lastQueue.context_uri || "") : ""
+  readonly property string playbackContextUri: nativeQueueActive ? queueContextUri
+    : (remotePlayback ? String(remotePlayback.contextUri || "") : "")
+  readonly property bool queueTruncated: nativeQueueActive && backendClient.lastQueue
+    ? backendClient.lastQueue.truncated === true : false
+  property bool queueActionBusy: false
+  property int queueActionSerial: 0
+  property int queueRevision: 0
+  property var queueMetadata: ({})
+  property var queueMetadataOrder: []
+  property bool queueMetadataLoading: false
+  readonly property string queuePlaybackIdentity: queueSource + "|" + currentUri + "|"
+    + selectedDeviceId + "|" + (remoteDevice ? String(remoteDevice.id || remoteDevice.name || "") : "")
+  onQueuePlaybackIdentityChanged: invalidateQueue()
   property var devices: []
   property var apiDevices: []
   property string pendingDeviceLoadError: ""
@@ -1290,7 +1311,7 @@ Item {
       loadSavedTracks(false)
     else if (activeView === "playlists" && (force || !playlistsLoaded))
       loadPlaylists(false)
-    else if (activeView === "queue" && (force || !queueLoaded))
+    else if (activeView === "queue")
       loadQueue()
     else if (activeView === "devices") {
       loadDevices(null, undefined, true)
@@ -2756,16 +2777,91 @@ Item {
       })
   }
 
+  function activateQueueItem(item) {
+    fail(queueUnavailableReason)
+  }
+
+  function invalidateQueue() {
+    queueRevision++
+    queueLoaded = false
+    queueLoading = false
+    queue = []
+    if (activeView === "queue") loadQueue()
+  }
+
+  function renderNativeQueue() {
+    var snapshot = backendClient.lastQueue
+    var entries = snapshot && Array.isArray(snapshot.next_tracks) ? snapshot.next_tracks : []
+    var next = []
+    for (var i = 0; i < entries.length && i < 100; i++) {
+      var entry = entries[i]
+      var uri = String(entry.uri || "")
+      var parts = uri.split(":")
+      if (parts.length !== 3 || ["track", "episode"].indexOf(parts[1]) < 0) continue
+      var item = queueMetadata["$" + uri]
+      if (!item) item = { type: parts[1], id: parts[2], uri: uri,
+        name: (parts[1] === "episode" ? "Episode " : "Track ") + parts[2],
+        subtitle: "Metadata unavailable", imageUrl: "", durationMs: 0 }
+      next.push(item)
+    }
+    queue = next
+    queueLoaded = snapshot !== null
+    queueLoading = false
+  }
+
+  function resolveQueueMetadata() {
+    if (!nativeQueueActive || activeView !== "queue" || queueMetadataLoading || !accountConnected) return
+    var missing = []
+    var type = ""
+    for (var i = 0; i < queue.length && missing.length < 50; i++) {
+      var item = queue[i]
+      if (queueMetadata["$" + item.uri] || (type && item.type !== type)) continue
+      type = item.type
+      if (missing.indexOf(item.id) < 0) missing.push(item.id)
+    }
+    if (!missing.length) return
+    var account = dataSerial
+    queueMetadataLoading = true
+    spotifyApi.request("GET", type === "episode" ? "/episodes" : "/tracks",
+      { ids: missing.join(",") }, null, function(status, payload, error) {
+        if (account !== root.dataSerial) return
+        root.queueMetadataLoading = false
+        if (error) return
+        var values = payload && payload[type === "episode" ? "episodes" : "tracks"] || []
+        var metadata = root.queueMetadata
+        var order = root.queueMetadataOrder.slice()
+        for (var j = 0; j < missing.length; j++) {
+          var uri = "spotify:" + type + ":" + missing[j]
+          // Keep failed lookups cached for this account rather than retrying on each event.
+          var normalized = values[j] ? Api.normalizeTrack(values[j], 96) : null
+          metadata["$" + uri] = normalized && normalized.uri === uri ? normalized : { type: type, id: missing[j], uri: uri,
+            name: "Unavailable " + type, subtitle: "", imageUrl: "", durationMs: 0 }
+          order.push(uri)
+        }
+        while (order.length > 200) delete metadata["$" + order.shift()]
+        root.queueMetadataOrder = order
+        if (root.nativeQueueActive) root.renderNativeQueue()
+        root.resolveQueueMetadata()
+      })
+  }
+
   function loadQueue(callback, serial) {
+    if (nativeQueueActive) {
+      renderNativeQueue()
+      resolveQueueMetadata()
+      if (typeof callback === "function") callback()
+      return
+    }
     if (queueLoading) {
       if (typeof callback === "function") callback()
       return
     }
     var expected = serial === undefined ? dataSerial : serial
+    var revision = queueRevision
     queueLoading = true
     spotifyApi.request("GET", "/me/player/queue", null, null,
       function(status, payload, error) {
-        if (expected !== root.dataSerial) return
+        if (expected !== root.dataSerial || revision !== root.queueRevision || root.nativeQueueActive) return
         root.queueLoading = false
         if (error) root.fail(error)
         else {
@@ -3048,13 +3144,17 @@ Item {
     var radioPlaylist = pendingPlaybackRadio
     clearPendingPlayback()
     localSocketWaitTimer.stop()
-    backendClient.loadPlayback(body, function(ok, result, error) {
+    backendClient.loadPlayback(body, function(ok, result, error, outcomeUnknown) {
       if (ok) {
         if (playbackSerial === root.radioSerial)
           root.radioContextSelected = !!radioPlaylist
         if (successMessage) root.succeed(successMessage)
         root.loadQueue()
         root.loadPlaybackState()
+        return
+      }
+      if (outcomeUnknown) {
+        root.fail(error || "The playback command outcome is unknown. Check playback before trying again")
         return
       }
       root.pendingPlaybackBody = body
@@ -3539,25 +3639,71 @@ Item {
     return "Sleep timer"
   }
 
-  function addToQueue(item) {
-    if (!item || ["track", "episode"].indexOf(item.type) < 0 || !item.uri) {
-      fail("Only tracks and episodes can be added to the queue")
+  function addToQueue(item, callback) {
+    addItemsToQueue([item], callback)
+  }
+
+  function enqueueQueueItem(item, native, deviceId, callback) {
+    if (native) {
+      backendClient.sendCommand("add_to_queue", { uri: item.uri }, callback)
       return
     }
-    if (!useRemotePlayback && backendClient.ready) {
-      backendClient.sendCommand("add_to_queue", { uri: item.uri },
-        function(ok, result, error) {
-          if (ok) {
-            root.succeed("Added to queue")
-            root.loadQueue()
-          } else root.fail(error || "Could not add that item to the queue")
-        })
+    spotifyApi.request("POST", "/me/player/queue", {
+      uri: item.uri, device_id: deviceId || undefined
+    }, null, function(status, payload, error) {
+      callback(!error, null, error || "", !!error && status === 0)
+    }, { priority: "interactive", retryRateLimit: false })
+  }
+
+  function addItemsToQueue(items, callback) {
+    var source = Array.isArray(items) ? items.slice() : []
+    var error = queueActionBusy ? "A queue action is already running"
+      : (!source.length || source.length > 100 ? "Select between 1 and 100 queue items" : "")
+    for (var i = 0; !error && i < source.length; i++) {
+      var item = source[i]
+      if (!item || ["track", "episode"].indexOf(item.type) < 0
+          || String(item.uri || "").indexOf("spotify:" + item.type + ":") !== 0)
+        error = "Only Spotify tracks and episodes can be added to the queue"
+    }
+    if (error) {
+      fail(error)
+      if (typeof callback === "function") callback(false, 0, error, false)
       return
     }
-    apiAction("POST", "/me/player/queue", {
-      uri: item.uri,
-      device_id: controlDeviceId() || undefined
-    }, null, "Added to queue", function(ok) { if (ok) root.loadQueue() })
+    var serial = ++queueActionSerial
+    var account = dataSerial
+    var native = !useRemotePlayback && backendClient.ready
+    var deviceId = controlDeviceId()
+    var selection = selectedDeviceId
+    var added = 0
+    var finished = false
+    queueActionBusy = true
+    noteActivity()
+    function finish(ok, error, unknown) {
+      if (finished) return
+      finished = true
+      if (serial === root.queueActionSerial) root.queueActionBusy = false
+      if (ok) root.succeed(added === 1 ? "Added to queue" : "Added " + added + " items to queue")
+      else root.fail((added ? "Added " + added + " of " + source.length + ". " : "")
+        + (error || "Could not add that item to the queue")
+        + (unknown ? ". The last item's outcome is unknown; check the queue before trying again" : ""))
+      if (added && account === root.dataSerial) root.loadQueue()
+      if (typeof callback === "function") callback(ok, added, error || "", unknown === true)
+    }
+    function next() {
+      if (serial !== root.queueActionSerial || account !== root.dataSerial
+          || selection !== root.selectedDeviceId || native !== (!root.useRemotePlayback && root.backend.ready)) {
+        finish(false, "The playback device or account changed", false)
+        return
+      }
+      root.enqueueQueueItem(source[added], native, deviceId, function(ok, result, error, unknown) {
+        if (!ok) { finish(false, error, unknown); return }
+        added++
+        if (added === source.length) finish(true, "", false)
+        else next()
+      })
+    }
+    next()
   }
 
   function startEngine() {
@@ -3685,6 +3831,12 @@ Item {
     currentUserId = ""
     currentUserName = ""
     queue = []
+    queueRevision++
+    queueMetadata = ({})
+    queueMetadataOrder = []
+    queueMetadataLoading = false
+    queueActionSerial++
+    queueActionBusy = false
     queueLoaded = false
     devices = []
     apiDevices = []
@@ -4217,6 +4369,12 @@ Item {
   BackendClient {
     id: backendClient
     wanted: daemonManager.running && !daemonManager.usingFallbackRuntime
+    onQueueReceived: {
+      if (root.nativeQueueActive) {
+        root.renderNativeQueue()
+        root.resolveQueueMetadata()
+      }
+    }
     onErrorCodeChanged: if (errorCode === "audio_key_unavailable")
       root.fail(errorMessage || "Spotify could not play this track on this computer")
   }

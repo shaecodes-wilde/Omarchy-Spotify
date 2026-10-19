@@ -26,7 +26,10 @@ use tokio::sync::{mpsc, oneshot, watch};
 
 use crate::{
     config::BackendConfig,
-    protocol::{Command, Lifecycle, PlaybackStatus, ProtocolError, RepeatMode, Track},
+    protocol::{
+        Command, Lifecycle, PlaybackStatus, ProtocolError, QueueEntry, QueueSnapshot, RepeatMode,
+        Track,
+    },
     state::StateStore,
 };
 
@@ -197,6 +200,7 @@ async fn supervise_sessions(
             current.lifecycle = Lifecycle::Starting;
             current.session_connected = false;
             current.active_client.clear();
+            clear_queue(current);
             true
         });
 
@@ -530,9 +534,45 @@ fn apply_event(state: &mut crate::protocol::BackendState, event: PlayerEvent) ->
             let connected = replace_if_changed(&mut state.session_connected, true);
             replace_if_changed(&mut state.username, user_name) || connected
         }
+        PlayerEvent::SetQueue {
+            context_uri,
+            current_track,
+            next_tracks,
+            prev_tracks,
+        } => {
+            let next_total = next_tracks.len();
+            let entry = |track: librespot_playback::player::QueueTrack| QueueEntry {
+                uri: track.uri,
+                provider: track.provider,
+            };
+            let queue = QueueSnapshot {
+                context_uri,
+                current_track: current_track.map(entry),
+                next_tracks: next_tracks.into_iter().take(100).map(entry).collect(),
+                prev_tracks: prev_tracks
+                    .into_iter()
+                    .rev()
+                    .take(20)
+                    .map(entry)
+                    .collect::<Vec<_>>()
+                    .into_iter()
+                    .rev()
+                    .collect(),
+                next_total,
+                truncated: next_total > 100,
+            };
+            if !replace_if_changed(&mut state.queue, Some(queue)) {
+                return false;
+            }
+            state.queue_revision = state.queue_revision.wrapping_add(1);
+            true
+        }
         PlayerEvent::SessionDisconnected { .. } => {
             let disconnected = replace_if_changed(&mut state.session_connected, false);
-            replace_if_changed(&mut state.active_client, String::new()) || disconnected
+            let queue_changed = clear_queue(state);
+            replace_if_changed(&mut state.active_client, String::new())
+                || disconnected
+                || queue_changed
         }
         PlayerEvent::SessionClientChanged { client_name, .. } => {
             replace_if_changed(&mut state.active_client, client_name)
@@ -553,9 +593,16 @@ fn apply_event(state: &mut crate::protocol::BackendState, event: PlayerEvent) ->
         | PlayerEvent::EndOfTrack { .. }
         | PlayerEvent::PlayRequestIdChanged { .. }
         | PlayerEvent::AutoPlayChanged { .. }
-        | PlayerEvent::FilterExplicitContentChanged { .. }
-        | PlayerEvent::SetQueue { .. } => false,
+        | PlayerEvent::FilterExplicitContentChanged { .. } => false,
     }
+}
+
+fn clear_queue(state: &mut crate::protocol::BackendState) -> bool {
+    if state.queue.take().is_none() {
+        return false;
+    }
+    state.queue_revision = state.queue_revision.wrapping_add(1);
+    true
 }
 
 fn track_from_audio_item(item: &AudioItem) -> Track {
@@ -693,6 +740,41 @@ mod tests {
 
     fn test_uri() -> SpotifyUri {
         SpotifyUri::from_uri("spotify:track:14XWXWv5FoCbFzLksawpEe").unwrap()
+    }
+
+    #[test]
+    fn queue_events_are_bounded_keep_duplicates_and_clear_on_disconnect() {
+        use librespot_playback::player::QueueTrack;
+        let mut state = BackendState::default();
+        let entry = QueueTrack {
+            uri: "spotify:track:repeat".into(),
+            provider: "queue".into(),
+        };
+        let event = PlayerEvent::SetQueue {
+            context_uri: "spotify:playlist:context".into(),
+            current_track: Some(entry.clone()),
+            next_tracks: vec![entry.clone(); 105],
+            prev_tracks: vec![entry; 30],
+        };
+        assert!(apply_event(&mut state, event.clone()));
+        let queue = state.queue.as_ref().unwrap();
+        assert_eq!(queue.next_tracks.len(), 100);
+        assert_eq!(queue.prev_tracks.len(), 20);
+        assert_eq!(queue.next_total, 105);
+        assert!(queue.truncated);
+        assert_eq!(queue.next_tracks[0], queue.next_tracks[1]);
+        let revision = state.queue_revision;
+        assert!(!apply_event(&mut state, event));
+        assert_eq!(state.queue_revision, revision);
+        assert!(apply_event(
+            &mut state,
+            PlayerEvent::SessionDisconnected {
+                connection_id: "connection".into(),
+                user_name: "user".into(),
+            }
+        ));
+        assert!(state.queue.is_none());
+        assert_eq!(state.queue_revision, revision + 1);
     }
 
     #[test]
