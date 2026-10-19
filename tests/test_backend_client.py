@@ -40,7 +40,9 @@ def check_case(case):
                         return
                     request = json.loads(stream.readline())
                     assert request["command"] == "load"
-                    if case == "disconnect":
+                    if case.endswith("_throws"):
+                        assert json.loads(stream.readline())["command"] == "load"
+                    if case.startswith("disconnect"):
                         return
                     assert stream.readline() == ""  # Timeout closes the fixture, without a retry.
             except Exception as error:
@@ -55,6 +57,7 @@ import Quickshell
 ShellRoot {
   id: tests
   property int callbacks: 0
+  property int throwingCallbacks: 0
   property int ticks: 0
   property bool sent: false
   BackendClient {
@@ -77,6 +80,12 @@ ShellRoot {
         Qt.quit()
       } else if (client.ready && !tests.sent) {
         tests.sent = true
+        if ("CASE".indexOf("_throws") >= 0) {
+          client.sendCommand("load", { uris: ["spotify:track:first"] }, function() {
+            tests.throwingCallbacks++
+            throw new Error("A consumer callback failed")
+          })
+        }
         client.sendCommand("load", { uris: ["spotify:track:test"] }, function(ok, result, error, unknown) {
           tests.callbacks++
           if (ok || !unknown) throw new Error("Uncertain load was reported as safe to retry")
@@ -95,6 +104,8 @@ ShellRoot {
     id: finish
     interval: 40
     onTriggered: {
+      if (tests.throwingCallbacks !== ("CASE".indexOf("_throws") >= 0 ? 1 : 0))
+        throw new Error("Throwing callback was not delivered exactly once")
       if (tests.callbacks !== 1 || client.pendingCount) throw new Error("Callback did not fail exactly once")
       console.log("BACKEND_CLIENT_PASS")
       Qt.quit()
@@ -114,5 +125,5 @@ ShellRoot {
 
 
 if __name__ == "__main__":
-    for scenario in ("disconnect", "timeout", "version"):
+    for scenario in ("disconnect", "timeout", "version", "disconnect_throws", "timeout_throws"):
         check_case(scenario)

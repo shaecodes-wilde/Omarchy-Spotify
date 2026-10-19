@@ -47,7 +47,10 @@ Item {
     var message = String(reason || "Playback on this computer is unavailable")
     for (var id in waiters) {
       var callback = waiters[id].callback
-      if (typeof callback === "function") callback(false, null, message, true)
+      if (typeof callback === "function") {
+        try { callback(false, null, message, true) }
+        catch (error) { /* consumers own callback errors */ }
+      }
     }
   }
 
@@ -95,8 +98,10 @@ Item {
     pending = next
     for (var i = 0; i < expired.length; i++) {
       var callback = expired[i].callback
-      if (typeof callback === "function")
-        callback(false, null, "Playback command timed out; its outcome is unknown", true)
+      if (typeof callback === "function") {
+        try { callback(false, null, "Playback command timed out; its outcome is unknown", true) }
+        catch (error) { /* consumers own callback errors */ }
+      }
     }
   }
 
