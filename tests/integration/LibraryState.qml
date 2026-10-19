@@ -70,6 +70,22 @@ ShellRoot {
       complete(pending, page(90))
       check(requests.length === pending + 1, "Hidden restore scheduled another page")
       check(!service.libraryRestorePending("tracks"), "Hidden restore target remained active")
+      service.visibleSurfaces = { test: true }
+      service.savedTracks = []
+      service.savedTracksNext = ""
+      service.savedTracksLoaded = true
+      service.setSavedState(testCase.uri, true)
+      service.loadSavedTracks(false)
+      var staleRead = requests.length - 1
+      service.toggleSavedItems([{ type: "track", uri: testCase.uri }])
+      complete(staleRead + 1, {})
+      complete(staleRead, { items: [{ track: { type: "track", uri: testCase.uri,
+        id: "example", name: "Removed song" } }], next: null })
+      check(!service.isSaved({ uri: testCase.uri }) && service.savedTracks.length === 0,
+        "Library read before removal restored deleted song/state")
+      check(requests.length === staleRead + 3, "Stale read did not schedule one fresh visible request")
+      complete(staleRead + 2, { items: [], next: null })
+      check(service.savedTracksLoaded && !service.savedTracksLoading, "Fresh library read did not settle")
       console.log("LIBRARY_STATE_PASS")
       Qt.quit()
     }

@@ -1609,11 +1609,27 @@ Item {
       return
     }
     var expected = serial === undefined ? dataSerial : serial
+    var mutation = savedMutationRevision
     root[spec.loading] = true
     spotifyApi.request("GET", path, append ? null : spec.query, null,
       function(status, payload, error) {
         if (expected !== root.dataSerial) return
         root[spec.loading] = false
+        // A library read begun before a confirmed write cannot restore stale rows
+        // or overwrite the newer saved state. Refetch only while a UI is visible.
+        if (mutation !== root.savedMutationRevision) {
+          if (root.uiVisible) root.loadLibraryCollection(kind, false, callback, expected)
+          else {
+            root[spec.items] = []
+            root[spec.next] = ""
+            root[spec.loaded] = false
+            var retained = Object.assign({}, root.retainedLibraryPages)
+            delete retained[kind]
+            root.retainedLibraryPages = retained
+            if (typeof callback === "function") callback()
+          }
+          return
+        }
         if (error) {
           var targets = Object.assign({}, root.libraryRestoreTargets)
           delete targets[kind]
