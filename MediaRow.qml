@@ -328,7 +328,7 @@ BorderSurface {
         id: durationLabel
         objectName: "media-row-duration"
         visible: root.durationActionVisible
-          && (!root.compactActions || root.actionsExpanded)
+          && (root.compactRows || !root.compactActions || root.actionsExpanded)
         anchors.verticalCenter: parent.verticalCenter
         text: Api.millisecondsToClock(root.itemData ? root.itemData.durationMs : 0)
         color: root.muted
