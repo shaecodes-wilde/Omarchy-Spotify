@@ -32,6 +32,19 @@ ShellRoot {
     }
     return null
   }
+  function listFor(collection) {
+    return find(collection, function(item) { return typeof item.itemAtIndex === "function" && "contentY" in item })
+  }
+  function collectionFor(id) {
+    var collections = panel.pageCollections()
+    for (var i=0; i<collections.length; i++)
+      if (collections[i].keyboardListId === id) return collections[i]
+    return null
+  }
+  function homeRowsReady() {
+    var list = listFor(collectionFor("list-home-recent"))
+    return list && list.count === 3 && !!list.itemAtIndex(0)
+  }
   function row(index) {
     return find(panel.pageCollection(), function(item) {
       return item.itemData && item.itemData.uri === "spotify:track:" + index && typeof item.triggerPrimary === "function"
@@ -160,6 +173,7 @@ ShellRoot {
         panel.currentTab = "home"
         panel.homeType = "overview"
       } else if (stage === 5) {
+        if (!ready(homeRowsReady(), "Home recent rows did not finish rendering")) return
         capture("home-wide")
         var savedMore = find(panelWindow.contentItem, function(item) {
           return item.text === "Show all" && item.parent && item.parent.parent
@@ -181,12 +195,18 @@ ShellRoot {
         })
       } else if (stage === 6) {
         if (!ready(panel.pageCollections().length === 3, "Mixed search did not finish loading")) return
+        var artistCollection = collectionFor("list-search-artist")
+        var artistList = listFor(artistCollection)
+        if (!ready(artistList && artistList.itemAtIndex(0), "Single artist preview did not render")) return
+        check(artistList.height >= Style.space(66) && artistList.height >= artistList.itemAtIndex(0).height,
+          "Single context preview cropped its row/byline")
         capture("search-all-wide")
         panel.currentTab = "home"
         panel.toggleRightPane("queue")
       } else if (stage === 7) {
         var drawer = find(panelWindow.contentItem, function(item) { return item.objectName === "spotify-right-pane-loader" })
         if (!narrowWindow && !ready(drawer && drawer.status === Loader.Ready, "Queue drawer did not finish loading")) return
+        if (!ready(homeRowsReady(), "Home shelves were blank beside the queue pane")) return
         capture("queue-pane-wide")
         panel.toggleRightPane("queue")
         panel.currentTab = "queue"
@@ -214,6 +234,15 @@ ShellRoot {
         spotify.savedTracks = []
       } else if (stage === 13) {
         capture("library-empty")
+        spotify.savedTracksLoading = true
+      } else if (stage === 14) {
+        check(panel.pageCollection().loading, "Busy library did not expose loading state")
+        capture("library-busy")
+        spotify.savedTracksLoading = false
+        spotify.lastError = "Spotify request failed. Refresh to retry."
+      } else if (stage === 15) {
+        check(!!find(panelWindow.contentItem, function(item) { return item.text === spotify.lastError }), "Request error is not visible")
+        capture("library-error")
         console.log("DESKTOP_EVENTS_PASS: mouse->Enter; mouse->Shift+Down; Ctrl-drag; queue spacing and tail")
         Qt.quit()
       }

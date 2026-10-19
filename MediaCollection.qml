@@ -475,7 +475,13 @@ Item {
       width: parent.width
       height: Math.max(30, parent.height - tools.height - moreButton.height
         - emptyLabel.height - filterProgress.height - selectionTools.height
-        - columnHeaders.height - parent.spacing * 6)
+        - columnHeaders.height - parent.spacing * (
+          (tools.visible && tools.height > 0 ? 1 : 0)
+          + (selectionTools.visible && selectionTools.height > 0 ? 1 : 0)
+          + (columnHeaders.visible && columnHeaders.height > 0 ? 1 : 0)
+          + (emptyLabel.visible && emptyLabel.height > 0 ? 1 : 0)
+          + (filterProgress.visible && filterProgress.height > 0 ? 1 : 0)
+          + (moreButton.visible && moreButton.height > 0 ? 1 : 0)))
       model: root.visibleItems
       clip: true
       spacing: Style.space(3)
