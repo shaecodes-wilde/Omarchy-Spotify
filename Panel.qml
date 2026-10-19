@@ -4549,11 +4549,11 @@ Item {
       MediaCollection {
         anchors.fill: parent
         service: root.service
-          onBatchQueueRequested: function(items) { if (root.service) root.service.addItemsToQueue(items) }
-          onListInteracted: root.setPanelCursor("page", keyboardListId)
-          onBatchPlaylistRequested: function(items) { root.openPlaylistPicker(items) }
-          onBatchSaveRequested: function(items) { if (root.service) root.service.toggleSavedItems(items) }
-          onBatchRemoveRequested: function(items) { if (root.service) root.service.removePlaylistItems(items, actionPlaylist) }
+        onBatchQueueRequested: function(items) { if (root.service) root.service.addItemsToQueue(items) }
+        onListInteracted: root.setPanelCursor("page", keyboardListId)
+        onBatchPlaylistRequested: function(items) { root.openPlaylistPicker(items) }
+        onBatchSaveRequested: function(items) { if (root.service) root.service.toggleSavedItems(items) }
+        onBatchRemoveRequested: function(items) { if (root.service) root.service.removePlaylistItems(items, actionPlaylist) }
         sourceItems: root.service ? root.service.discoverPlaylists : []
         filterText: root.discoverFilter
         showFilter: false
@@ -4853,11 +4853,11 @@ Item {
                   - parent.spacing)
                 keyboardListId: "list-albums"
                 service: root.service
-          onBatchQueueRequested: function(items) { if (root.service) root.service.addItemsToQueue(items) }
-          onListInteracted: root.setPanelCursor("page", keyboardListId)
-          onBatchPlaylistRequested: function(items) { root.openPlaylistPicker(items) }
-          onBatchSaveRequested: function(items) { if (root.service) root.service.toggleSavedItems(items) }
-          onBatchRemoveRequested: function(items) { if (root.service) root.service.removePlaylistItems(items, actionPlaylist) }
+                onBatchQueueRequested: function(items) { if (root.service) root.service.addItemsToQueue(items) }
+                onListInteracted: root.setPanelCursor("page", keyboardListId)
+                onBatchPlaylistRequested: function(items) { root.openPlaylistPicker(items) }
+                onBatchSaveRequested: function(items) { if (root.service) root.service.toggleSavedItems(items) }
+                onBatchRemoveRequested: function(items) { if (root.service) root.service.removePlaylistItems(items, actionPlaylist) }
                 sourceItems: root.service ? root.service.artistAlbums : []
                 showFilter: false
                 showQueue: false
@@ -4903,11 +4903,11 @@ Item {
                   * (artistThisIsRow.visible ? 2 : 1))
                 keyboardListId: "list-songs"
                 service: root.service
-          onBatchQueueRequested: function(items) { if (root.service) root.service.addItemsToQueue(items) }
-          onListInteracted: root.setPanelCursor("page", keyboardListId)
-          onBatchPlaylistRequested: function(items) { root.openPlaylistPicker(items) }
-          onBatchSaveRequested: function(items) { if (root.service) root.service.toggleSavedItems(items) }
-          onBatchRemoveRequested: function(items) { if (root.service) root.service.removePlaylistItems(items, actionPlaylist) }
+                onBatchQueueRequested: function(items) { if (root.service) root.service.addItemsToQueue(items) }
+                onListInteracted: root.setPanelCursor("page", keyboardListId)
+                onBatchPlaylistRequested: function(items) { root.openPlaylistPicker(items) }
+                onBatchSaveRequested: function(items) { if (root.service) root.service.toggleSavedItems(items) }
+                onBatchRemoveRequested: function(items) { if (root.service) root.service.removePlaylistItems(items, actionPlaylist) }
                 sourceItems: root.service ? root.service.artistSongs : []
                 showFilter: false
                 showQueue: true
