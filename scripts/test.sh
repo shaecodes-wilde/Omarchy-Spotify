@@ -41,6 +41,7 @@ PYTHONDONTWRITEBYTECODE=1 python3 "$source_root/tests/test_connect_helper.py"
 "$source_root/tests/test-scripts.sh"
 "$source_root/scripts/test-quickshell.sh"
 "$source_root/scripts/test-desktop.sh"
+"$source_root/scripts/test-desktop-events.sh"
 
 if rg -n 'QtWebEngine|WebEngineView|WebView|playerctl|node_modules' \
   --glob '*.qml' --glob '*.js' --glob '*.sh' --glob '*.service' \
