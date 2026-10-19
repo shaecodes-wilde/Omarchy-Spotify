@@ -22,7 +22,8 @@ Validation on this branch passes Rust formatting, 26 tests and Clippy, plugin
 validation and qmllint, 249 QML tests, 19 Python helper tests, installer checks,
 five socket cases, four sampler tests, and isolated Quickshell regressions. Native
 QtTest events verify click-to-Enter, Shift selection and dragging two selected
-tracks into a playlist; fixtures also cover loading/errors, narrow layout and
+tracks into a playlist; native checks also verify lazy row-action creation,
+geometry and action dispatch. Fixtures cover loading/errors, narrow layout and
 queue viewport boundaries. All helpers, runtime directories and DBus sessions
 are isolated from the live account and playback backend.
 

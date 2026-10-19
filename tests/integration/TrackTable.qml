@@ -36,6 +36,53 @@ ShellRoot {
       onBatchQueueRequested: function(items) { testCase.queuedSelection = items }
     }
   }
+  Component {
+    id: rowFactory
+    Plugin.MediaRow {
+      width: 160
+      itemData: testCase.rows[0]
+      artworkEnabled: false
+      showSave: true
+      showQueue: true
+    }
+  }
+  function named(item, name) {
+    if (item.objectName === name) return item
+    var children = item.children || []
+    for (var i = 0; i < children.length; i++) {
+      var found = named(children[i], name)
+      if (found) return found
+    }
+    return null
+  }
+  function test_hiddenRowActionsAreLazyAndKeepTheirGeometry() {
+    var row = rowFactory.createObject(testWindow.contentItem)
+    var toggle = named(row, "media-row-actions-toggle")
+    var play = named(row, "media-row-play")
+    var queue = named(row, "media-row-queue")
+    var playlist = named(row, "media-row-playlist")
+    var save = named(row, "media-row-save")
+    verify(row.compactActions)
+    verify(!play.item && !queue.item && !playlist.item)
+    verify(save.item)
+    var measuredWidth = row.fullActionWidth
+    var played = false
+    var queued = false
+    row.activated.connect(function() { played = true })
+    row.queueRequested.connect(function() { queued = true })
+    toggle.clicked()
+    verify(play.item && queue.item && playlist.item)
+    verify(Math.abs(play.fullWidth - play.item.implicitWidth) < 0.5)
+    compare(row.fullActionWidth, measuredWidth)
+    play.item.clicked()
+    queue.item.clicked()
+    verify(played && queued)
+    toggle.clicked()
+    verify(!play.item && !queue.item && !playlist.item)
+    row.width = 1200
+    verify(!row.compactActions && play.item && queue.item && playlist.item)
+    row.destroy()
+  }
   function init() {
     collection.clearSelection()
     collection.filterText = ""
@@ -84,6 +131,7 @@ ShellRoot {
       init(); test_compactColumnsAndPersistentPreferences()
       init(); test_selectionAndFilteringNeverPlayOrChangeSourceOrder()
       init(); test_shiftKeyboardSelectionAndFocusRestoration()
+      test_hiddenRowActionsAreLazyAndKeepTheirGeometry()
       console.log("TRACK_TABLE_PASS")
       Qt.quit()
     }

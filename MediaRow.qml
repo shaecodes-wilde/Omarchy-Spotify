@@ -53,12 +53,46 @@ BorderSurface {
   readonly property int fullActionCount: (durationActionVisible ? 1 : 0)
     + (saveActionVisible ? 1 : 0) + (playlistActionVisible ? 1 : 0)
     + (queueActionVisible ? 1 : 0) + (playActionVisible ? 1 : 0)
+  // Keep overflow measurements stable without constructing hidden action controls.
+  TextMetrics {
+    id: toggleMetrics
+    text: actionToggle.iconText
+    font.family: actionToggle.fontFamily
+    font.pixelSize: actionToggle.iconSize
+  }
+  readonly property real actionButtonInsets: actionToggle.implicitWidth - toggleMetrics.advanceWidth
+  component RowAction: Loader {
+    id: action
+    required property string glyph
+    property string tip: ""
+    property color foreground: root.foreground
+    property color accent: Color.accent
+    readonly property real fullWidth: metrics.advanceWidth + root.actionButtonInsets
+    signal triggered()
+    active: visible
+    width: fullWidth
+    height: item ? item.implicitHeight : 0
+    TextMetrics {
+      id: metrics
+      text: action.glyph
+      font.family: actionToggle.fontFamily
+      font.pixelSize: actionToggle.iconSize
+    }
+    sourceComponent: Button {
+      iconText: action.glyph
+      tooltipText: action.tip
+      foreground: action.foreground
+      accent: action.accent
+      horizontalPadding: Style.space(7)
+      onClicked: action.triggered()
+    }
+  }
   readonly property real fullActionWidth:
     (durationActionVisible ? durationLabel.implicitWidth : 0)
-    + (saveActionVisible ? saveButton.implicitWidth : 0)
-    + (playlistActionVisible ? playlistButton.implicitWidth : 0)
-    + (queueActionVisible ? queueButton.implicitWidth : 0)
-    + (playActionVisible ? playButton.implicitWidth : 0)
+    + (saveActionVisible ? saveButton.fullWidth : 0)
+    + (playlistActionVisible ? playlistButton.fullWidth : 0)
+    + (queueActionVisible ? queueButton.fullWidth : 0)
+    + (playActionVisible ? playButton.fullWidth : 0)
     + Math.max(0, fullActionCount - 1) * Style.space(2)
   readonly property real titleWidthWithFullActions: Math.max(0,
     contentRow.width - artworkSurface.width - fullActionWidth
@@ -336,52 +370,48 @@ BorderSurface {
         font.pixelSize: Style.font.caption
       }
 
-      Button {
+      RowAction {
         id: saveButton
         objectName: "media-row-save"
         visible: root.saveActionVisible
-        iconText: "󰋑"
+        glyph: "󰋑"
         foreground: Color.urgent
         accent: Color.urgent
-        tooltipText: "Save to library"
-        horizontalPadding: Style.space(7)
-        onClicked: root.saveRequested(root.itemData)
+        tip: "Save to library"
+        onTriggered: root.saveRequested(root.itemData)
       }
 
-      Button {
+      RowAction {
         id: playlistButton
         objectName: "media-row-playlist"
         visible: root.playlistActionVisible
           && (!root.compactActions || root.actionsExpanded)
-        iconText: "󱁐"
+        glyph: "󱁐"
         foreground: root.foreground
-        tooltipText: "Add to playlist"
-        horizontalPadding: Style.space(7)
-        onClicked: root.playlistRequested(root.itemData)
+        tip: "Add to playlist"
+        onTriggered: root.playlistRequested(root.itemData)
       }
 
-      Button {
+      RowAction {
         id: queueButton
         objectName: "media-row-queue"
         visible: root.queueActionVisible
           && (!root.compactActions || root.actionsExpanded)
-        iconText: "󰐕"
+        glyph: "󰐕"
         foreground: root.foreground
-        tooltipText: "Add to queue"
-        horizontalPadding: Style.space(7)
-        onClicked: root.queueRequested(root.itemData)
+        tip: "Add to queue"
+        onTriggered: root.queueRequested(root.itemData)
       }
 
-      Button {
+      RowAction {
         id: playButton
         objectName: "media-row-play"
         visible: root.playActionVisible
           && (!root.compactActions || root.actionsExpanded)
-        iconText: "󰐊"
+        glyph: "󰐊"
         foreground: root.foreground
-        tooltipText: "Play"
-        horizontalPadding: Style.space(7)
-        onClicked: root.triggerPlay()
+        tip: "Play"
+        onTriggered: root.triggerPlay()
       }
 
       Button {
