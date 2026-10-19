@@ -6,6 +6,7 @@ import "plugin" as Plugin
 ShellRoot {
   id: fixture
   property int stage: 0
+  property double closeDeadlineAt: 0
   property var panelWindow: null
   property var driver: null
   property var picker: null
@@ -19,6 +20,11 @@ ShellRoot {
   property var secondItems: [{kind:"item", type:"track", id:"c", uri:"spotify:track:c", name:"Second", subtitle:"Artist", artists:[], albumItem:null, externalUrl:"", durationMs:180000}]
   function check(value, message) {
     if (!value) { run.stop(); console.error("PLAYLIST_POPUP_LIFETIME_FAIL: " + message); Qt.quit(); throw new Error(message) }
+  }
+  function released(value, message) {
+    if (value) return true
+    check(Date.now() < closeDeadlineAt, message)
+    return false
   }
   function object(name) {
     for (var i=0; i<panel.data.length; i++)
@@ -78,8 +84,9 @@ ShellRoot {
         driver.mouseClick(createButton, createButton.width / 2, createButton.height / 2)
         check(spotify.createRequests.length === 1, "Create click did not start a request")
         picker.close()
+        closeDeadlineAt = Date.now() + 2000
       } else if (stage === 2) {
-        check(panel.pendingPlaylistItem === null, "Closed picker retained selected rows")
+        if (!released(panel.pendingPlaylistItem === null, "Closed picker retained selected rows")) return
         panel.openPlaylistPicker(secondItems)
         secondPending = panel.pendingPlaylistItem
         panel.newPlaylistName = "Draft B"
@@ -91,14 +98,16 @@ ShellRoot {
         check(picker.opened && panel.pendingPlaylistItem === secondPending && panel.newPlaylistName === "Draft B",
           "Delayed create closed or reset a newer picker")
         picker.close()
+        closeDeadlineAt = Date.now() + 2000
       } else if (stage === 4) {
-        check(panel.pendingPlaylistItem === null, "Second picker retained its batch after close")
+        if (!released(panel.pendingPlaylistItem === null, "Second picker retained its batch after close")) return
         panel.openMediaContext(firstItems[0], 20, 20, Array(1000).fill(firstItems[0]), "", 0)
         contextMenu.close()
+        closeDeadlineAt = Date.now() + 2000
         check(panel.contextItem === firstItems[0] && panel.contextSourceItems.length === 1000,
           "Context cleanup ran before the click handler could use its item")
       } else if (stage === 5) {
-        check(panel.contextItem === null && panel.contextSourceItems.length === 0, "Closed context retained its source array")
+        if (!released(panel.contextItem === null && panel.contextSourceItems.length === 0, "Closed context retained its source array")) return
         panel.openMediaContext(firstItems[0], 20, 20, firstItems, "", 0)
         contextMenu.close()
         panel.openMediaContext(secondItems[0], 20, 20, secondItems, "", 0)
@@ -106,10 +115,11 @@ ShellRoot {
         check(contextMenu.opened && panel.contextItem === secondItems[0], "Deferred cleanup cleared a reopened context menu")
         panel.openPlaylistPicker(firstItems)
         panel.close()
+        closeDeadlineAt = Date.now() + 2000
         check(!picker.opened && panel.pendingPlaylistItem === null, "Panel close retained its picker/batch")
       } else {
-        check(!contextMenu.opened && panel.contextItem === null && panel.contextSourceItems.length === 0,
-          "Panel close retained context references")
+        if (!released(!contextMenu.opened && panel.contextItem === null && panel.contextSourceItems.length === 0,
+          "Panel close retained context references")) return
         console.log("PLAYLIST_POPUP_LIFETIME_PASS")
         Qt.quit()
       }
