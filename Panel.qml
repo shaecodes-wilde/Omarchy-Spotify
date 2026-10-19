@@ -349,6 +349,17 @@ Item {
     mediaContextMenu.open()
   }
 
+  function releaseClosedContext() {
+    if (mediaContextMenu.opened) return
+    contextItem = null
+    contextSourceItems = []
+    contextSourceUri = ""
+    contextPlaybackUri = ""
+    contextSourceIndex = -1
+    contextIsQueue = false
+    contextPlaylist = null
+  }
+
   function dismissTransientPopup() {
     if (playlistEditor.opened) { playlistEditor.close(); return true }
     if (lyricsInstallPopup.opened && (!service || !service.lyricsPluginBusy)) {
@@ -2046,8 +2057,19 @@ Item {
 
   function close() {
     persistUiState()
-    clearShortcutMode()
     closingFromHost = true
+    playlistPicker.close()
+    pendingPlaylistItem = null
+    newPlaylistName = ""
+    mediaContextMenu.close()
+    Qt.callLater(releaseClosedContext)
+    playlistEditor.close()
+    playlistEditor.playlist = null
+    createPlaylistPopup.close()
+    shortcutHelpPopup.close()
+    sleepPopup.close()
+    lyricsInstallPopup.close()
+    clearShortcutMode()
     opened = false
     if (service) {
       service.setUiVisible("full-panel", false)
@@ -2606,6 +2628,7 @@ Item {
 
   Popup {
     id: mediaContextMenu
+    objectName: "spotify-media-context-menu"
     parent: window.contentItem
     width: Math.min(Style.space(310), window.width - Style.space(24))
     height: Math.min(window.height - Style.space(24),
@@ -2633,7 +2656,8 @@ Item {
         root.ensurePanelCursor(root.popupReturnRegion)
         root.syncCursorFocus()
       }
-      Qt.callLater(function() { focusScope.forceActiveFocus() })
+      Qt.callLater(root.releaseClosedContext)
+      Qt.callLater(function() { if (root.opened) focusScope.forceActiveFocus() })
     }
 
     background: BorderSurface {
@@ -2955,6 +2979,13 @@ Item {
 
   Popup {
     id: playlistPicker
+    objectName: "spotify-playlist-picker"
+    onClosed: {
+      if (!opened) {
+        root.pendingPlaylistItem = null
+        root.newPlaylistName = ""
+      }
+    }
     parent: window.contentItem
     x: Math.max(Style.space(8), (window.width - width) / 2)
     y: Math.max(Style.space(8), (window.height - height) / 2)
@@ -3012,18 +3043,22 @@ Item {
 
         Button {
           id: createPlaylistButton
+          objectName: "playlist-picker-create"
           text: "Create"
           iconText: "󰐕"
           foreground: root.foreground
           enabled: root.service && root.newPlaylistName.trim() !== ""
             && !root.service.playlistActionBusy
           onClicked: {
-            if (!root.service) return
-            root.service.createPlaylist(root.newPlaylistName, function(playlist) {
-              if (root.pendingPlaylistItem) root.service.addItemsToPlaylist(
-                root.pendingPlaylistItem, playlist)
-              root.newPlaylistName = ""
-              playlistPicker.close()
+            var items = root.pendingPlaylistItem
+            var actionService = root.service
+            if (!actionService || !items || !items.length) return
+            actionService.createPlaylist(root.newPlaylistName, function(playlist) {
+              if (playlist) actionService.addItemsToPlaylist(items, playlist)
+              if (root.pendingPlaylistItem === items) {
+                root.newPlaylistName = ""
+                playlistPicker.close()
+              }
             })
           }
         }

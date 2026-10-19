@@ -80,6 +80,7 @@ if [[ $# -gt 0 ]]; then
   case "$1" in
     DesktopNavigation) marker=DESKTOP_NAVIGATION_PASS ;;
     DesktopEvents) marker=DESKTOP_EVENTS_PASS ;;
+    PlaylistPopupLifetime) marker=PLAYLIST_POPUP_LIFETIME_PASS ;;
     *) echo "Unknown desktop fixture: $1" >&2; exit 2 ;;
   esac
   cp "$source_root/"*.qml "$source_root/"*.js "$test_root/app/plugin/"
@@ -110,7 +111,8 @@ for spec in \
     'DiscoveryPipeline DISCOVERY_PIPELINE_PASS discovery-pipeline' \
     'DiscoveryPersistence DISCOVERY_PERSISTENCE_PASS discovery-persistence' \
     'ResourcePolicy RESOURCE_POLICY_PASS resource-policy' \
-    'TrackTable TRACK_TABLE_PASS track-table'; do
+    'TrackTable TRACK_TABLE_PASS track-table' \
+    'PlaylistPopupLifetime PLAYLIST_POPUP_LIFETIME_PASS playlist-popup-lifetime'; do
   read -r fixture marker description <<< "$spec"
   cp "$source_root/tests/integration/$fixture.qml" "$test_root/app/shell.qml"
   run_native "$test_root/app" "$marker" "$description"

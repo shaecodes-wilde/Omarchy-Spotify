@@ -433,41 +433,55 @@ Item {
       }
     }
 
-    Flow {
+    Loader {
       id: selectionTools
+      objectName: "media-selection-tools"
       width: parent.width
-      height: visible ? implicitHeight : 0
-      visible: root.selectionCount > 0
-      spacing: Style.space(5)
-      Text {
-        text: root.selectionCount + " selected"
-        color: Color.foreground
-        font.family: Style.font.family
-        font.pixelSize: Style.font.bodySmall
+      active: root.selectionCount > 0
+      visible: active
+      height: active && item ? item.implicitHeight : 0
+      sourceComponent: Component {
+        Flow {
+          width: selectionTools.width
+          spacing: Style.space(5)
+          Text {
+            text: root.selectionCount + " selected"
+            color: Color.foreground
+            font.family: Style.font.family
+            font.pixelSize: Style.font.bodySmall
+          }
+          Button { visible: root.showQueue; text: "Queue"; onClicked: root.batchQueueRequested(root.selectedItems()) }
+          Button { visible: root.showPlaylist; text: "Add to playlist…"; onClicked: root.batchPlaylistRequested(root.selectedItems()) }
+          Button { visible: root.showSave; text: "Save / unsave"; onClicked: root.batchSaveRequested(root.selectedItems()) }
+          Button { visible: root.allowRemove; text: "Remove all copies"; onClicked: root.batchRemoveRequested(root.selectedItems()) }
+          Button { text: "Clear"; onClicked: root.clearSelection() }
+        }
       }
-      Button { visible: root.showQueue; text: "Queue"; onClicked: root.batchQueueRequested(root.selectedItems()) }
-      Button { visible: root.showPlaylist; text: "Add to playlist…"; onClicked: root.batchPlaylistRequested(root.selectedItems()) }
-      Button { visible: root.showSave; text: "Save / unsave"; onClicked: root.batchSaveRequested(root.selectedItems()) }
-      Button { visible: root.allowRemove; text: "Remove all copies"; onClicked: root.batchRemoveRequested(root.selectedItems()) }
-      Button { text: "Clear"; onClicked: root.clearSelection() }
     }
 
-    Row {
+    Loader {
       id: columnHeaders
+      objectName: "media-column-headers"
       width: parent.width
-      height: visible ? implicitHeight : 0
-      visible: root.trackTable && root.showTableTools
-      spacing: Style.space(5)
-      Button {
-        text: root.compactRows ? "Compact" : "Comfortable"
-        tooltipText: "Change track row density"
-        onClicked: if (root.service) root.service.persistSettings({ trackDensity: root.compactRows ? "Comfortable" : "Compact" })
+      active: root.trackTable && root.showTableTools
+      visible: active
+      height: active && item ? item.implicitHeight : 0
+      sourceComponent: Component {
+        Row {
+          width: columnHeaders.width
+          spacing: Style.space(5)
+          Button {
+            text: root.compactRows ? "Compact" : "Comfortable"
+            tooltipText: "Change track row density"
+            onClicked: if (root.service) root.service.persistSettings({ trackDensity: root.compactRows ? "Comfortable" : "Compact" })
+          }
+          Button { text: "Columns"; tooltipText: root.columns; onClicked: root.cycleColumns() }
+          Button { text: "Title"; onClicked: root.setSort("name") }
+          Button { visible: root.albumColumn; text: "Album"; onClicked: root.setSort("album") }
+          Button { visible: root.dateColumn; text: "Added"; onClicked: root.setSort(root.sortKey === "date" ? "date-asc" : "date") }
+          Button { text: "Time"; onClicked: root.setSort("duration") }
+        }
       }
-      Button { text: "Columns"; tooltipText: root.columns; onClicked: root.cycleColumns() }
-      Button { text: "Title"; onClicked: root.setSort("name") }
-      Button { visible: root.albumColumn; text: "Album"; onClicked: root.setSort("album") }
-      Button { visible: root.dateColumn; text: "Added"; onClicked: root.setSort(root.sortKey === "date" ? "date-asc" : "date") }
-      Button { text: "Time"; onClicked: root.setSort("duration") }
     }
 
     ListView {

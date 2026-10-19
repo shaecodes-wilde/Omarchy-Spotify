@@ -129,6 +129,8 @@ ShellRoot {
         readableTheme()
         var probe = columnProbe.createObject(panel)
         check(probe.albumColumn && !probe.dateColumn, "700px table should show album but not date")
+        var inactiveSelection = find(probe, function(item) { return item.objectName === "media-selection-tools" })
+        check(inactiveSelection && !inactiveSelection.item, "Empty selection eagerly created batch controls")
         probe.width = 560
         check(!probe.albumColumn && !probe.dateColumn, "560px table should hide album and date")
         probe.width = 1150
@@ -152,6 +154,8 @@ ShellRoot {
         driver.keyRelease(Qt.Key_Shift)
       } else if (stage === 4) {
         check(panel.pageCollection().selectionCount === 2, "Shift+Down after click did not extend selection")
+        var selectedTools = find(panel.pageCollection(), function(item) { return item.objectName === "media-selection-tools" })
+        check(selectedTools && selectedTools.item && selectedTools.height > 0, "Selected rows did not create usable batch controls")
         check(panel.pageCollection().listCurrentIndex === 1, "Shift+Down did not move to the adjacent row")
         check(spotify.playCalls === 1, "Shift selection started playback")
         capture("library-wide-selection")
@@ -196,6 +200,8 @@ ShellRoot {
       } else if (stage === 6) {
         if (!ready(panel.pageCollections().length === 3, "Mixed search did not finish loading")) return
         var artistCollection = collectionFor("list-search-artist")
+        var previewHeaders = find(artistCollection, function(item) { return item.objectName === "media-column-headers" })
+        check(previewHeaders && !previewHeaders.item, "Preview eagerly created hidden column controls")
         var artistList = listFor(artistCollection)
         if (!ready(artistList && artistList.itemAtIndex(0), "Single artist preview did not render")) return
         check(artistList.height >= Style.space(66) && artistList.height >= artistList.itemAtIndex(0).height,
