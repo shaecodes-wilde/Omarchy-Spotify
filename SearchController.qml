@@ -61,6 +61,7 @@ Item {
       searchGroups = refreshedGroups
       var refreshedTypes = Api.shallowCopy(searchLoadedTypes)
       refreshedTypes[value] = false
+      refreshedTypes.all = false
       searchLoadedTypes = refreshedTypes
     }
     if (searchLoadedTypes[value] === true) {
@@ -115,6 +116,15 @@ Item {
       return force === true || root.searchLoadedTypes[type] !== true
     })
     if (!types.length) return
+    if (force === true) {
+      var cleared = Api.shallowCopy(searchGroups)
+      types.forEach(function(type) { cleared[type] = Api.normalizeSearchPage({}, type, 128) })
+      searchGroups = cleared
+      var pendingTypes = Api.shallowCopy(searchLoadedTypes)
+      pendingTypes.all = false
+      types.forEach(function(type) { pendingTypes[type] = false })
+      searchLoadedTypes = pendingTypes
+    }
     retryMode = "initial"
     searchLoading = true
     searchPendingType = "all"

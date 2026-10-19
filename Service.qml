@@ -1984,6 +1984,17 @@ Item {
     playlistActions.writeItems(items, playlist || selectedPlaylist, true)
   }
 
+  function makePlaylistYourOwn(playlist, callback) { playlistActions.makePlaylistYourOwn(playlist, callback) }
+  function requestPlaylistItemReorder(sourceIndex, destinationIndex, playlist, count, sourceItems) {
+    playlistActions.requestPlaylistItemReorder(sourceIndex, destinationIndex, playlist, count, sourceItems)
+  }
+  function reorderPlaylistItem(sourceIndex, destinationIndex, playlist, count, sourceItems) {
+    playlistActions.reorderPlaylistItem(sourceIndex, destinationIndex, playlist, count, sourceItems)
+  }
+  function movePlaylistItem(index, delta, playlist, count) {
+    playlistActions.movePlaylistItem(index, delta, playlist, count)
+  }
+
   function registerPlaylistCopy(playlist) {
     if (!playlist) return
     var next = [playlist]
@@ -1994,116 +2005,10 @@ Item {
     setSavedState(playlist.uri, true)
   }
 
-  function finishPlaylistConversion(error) {
-    playlistConversionBusy = false
-    playlistActionBusy = false
-    statusMessage = ""
-    if (error) fail(error)
-  }
 
-  function collectPlaylistForCopy(playlist, path, collected, expected, callback) {
-    var first = !path
-    var requestPath = path || "/playlists/" + encodeURIComponent(String(playlist.id)) + "/items"
-    spotifyApi.request("GET", requestPath, first ? { limit: 50 } : null, null,
-      function(status, payload, error) {
-        if (expected !== root.dataSerial) return
-        if (error) { callback([], error); return }
-        if (!payload || !Array.isArray(payload.items)) {
-          callback([], "Spotify does not make this playlist's songs available to copy. The original was left untouched.")
-          return
-        }
-        var page = Api.normalizePage(payload, function(value) {
-          return Api.normalizeTrack(value, 96)
-        })
-        var combined = collected.concat(page.items)
-        if (page.next && combined.length < 10000) {
-          root.collectPlaylistForCopy(playlist, page.next, combined, expected, callback)
-          return
-        }
-        if (page.next) {
-          callback([], "This playlist is too large to copy safely")
-          return
-        }
-        callback(combined, "")
-      })
-  }
 
-  function addPlaylistCopyBatches(playlist, uris, offset, expected, callback) {
-    if (expected !== dataSerial) return
-    if (offset >= uris.length) { callback(""); return }
-    var batch = uris.slice(offset, Math.min(offset + 100, uris.length))
-    spotifyApi.request("POST", "/playlists/" + encodeURIComponent(String(playlist.id)) + "/items",
-      null, { uris: batch }, function(status, payload, error) {
-        if (expected !== root.dataSerial) return
-        if (error) { callback(error); return }
-        root.updatePlaylistSnapshot(playlist.id, payload && payload.snapshot_id)
-        root.addPlaylistCopyBatches(playlist, uris, offset + batch.length, expected, callback)
-      })
-  }
 
-  function removeOriginalAfterCopy(original, copy, expected, callback) {
-    spotifyApi.request("DELETE", "/me/library", { uris: original.uri }, null,
-      function(status, payload, error) {
-        if (expected !== root.dataSerial) return
-        if (error) {
-          root.finishPlaylistConversion("Your copy is ready, but Spotify could not remove the original from your library")
-          return
-        }
-        var next = []
-        for (var i = 0; i < root.playlists.length; i++) {
-          var candidate = root.playlists[i]
-          if (String(candidate.id || "") !== String(original.id || "")) next.push(candidate)
-        }
-        root.playlists = next
-        root.setSavedState(original.uri, false)
-        root.finishPlaylistConversion("")
-        root.succeed("Your playlist is ready")
-        if (typeof callback === "function") callback(copy)
-      })
-  }
 
-  function makePlaylistYourOwn(playlist, callback) {
-    if (!playlist || playlist.type !== "playlist" || !playlist.id || !playlist.uri
-        || playlistOwned(playlist) || playlistActionBusy || !currentUserId) return
-    var expected = dataSerial
-    playlistActionBusy = true
-    playlistConversionBusy = true
-    lastError = ""
-    statusClearTimer.stop()
-    statusMessage = "Reading " + String(playlist.name || "playlist") + "…"
-    collectPlaylistForCopy(playlist, "", [], expected, function(items, readError) {
-      if (readError) { root.finishPlaylistConversion(readError); return }
-      var uris = Api.playlistItemUris(items)
-      if (Number(playlist.total || 0) > 0 && uris.length === 0) {
-        root.finishPlaylistConversion("Spotify does not make this playlist's songs available to copy. The original was left untouched.")
-        return
-      }
-      root.statusMessage = "Creating your playlist…"
-      spotifyApi.request("POST", "/me/playlists", null, {
-        name: String(playlist.name || "My playlist").slice(0, 100),
-        "public": false,
-        description: "Your copy, created with Omarchy Spotify"
-      }, function(status, payload, createError) {
-        if (expected !== root.dataSerial) return
-        if (createError) { root.finishPlaylistConversion(createError); return }
-        var copy = Api.normalizePlaylist(payload, 96)
-        if (!copy) {
-          root.finishPlaylistConversion("Spotify created the playlist, but it could not be opened")
-          return
-        }
-        root.registerPlaylistCopy(copy)
-        root.statusMessage = "Copying " + uris.length + (uris.length === 1 ? " item…" : " items…")
-        root.addPlaylistCopyBatches(copy, uris, 0, expected, function(copyError) {
-          if (copyError) {
-            root.finishPlaylistConversion("The new playlist was created, but Spotify stopped before every item was copied. The original was kept.")
-            return
-          }
-          root.statusMessage = "Removing the original from your library…"
-          root.removeOriginalAfterCopy(playlist, copy, expected, callback)
-        })
-      })
-    })
-  }
 
   function reloadPlaylist(playlist) {
     if (!playlist) return
@@ -2127,72 +2032,8 @@ Item {
     removePlaylistItems([item], playlist)
   }
 
-  function requestPlaylistItemReorder(sourceIndex, destinationIndex, playlist, count,
-      sourceItems) {
-    var target = playlist || selectedPlaylist
-    if (!playlistEditable(target) || playlistActionBusy) return
-    var length = Math.max(0, Math.floor(Number(count) || playlistItems.length))
-    var playlistId = String(target.id || "")
-    var selectedMatches = selectedPlaylist
-      && String(selectedPlaylist.id || "") === playlistId
-    var detailMatches = detailItem && detailItem.type === "playlist"
-      && String(detailItem.id || "") === playlistId
-    var orderingItems = Array.isArray(sourceItems) ? sourceItems
-      : (selectedMatches ? playlistItems : (detailMatches ? detailItems : []))
-    var body = orderingItems.length
-      ? Api.playlistReorderBodyForItems(orderingItems, sourceIndex,
-        destinationIndex, Math.max(length, Number(target.total) || 0),
-        target.snapshotId)
-      : Api.playlistReorderBody(sourceIndex, destinationIndex, length,
-        target ? target.snapshotId : "")
-    if (!body) return
 
-    var sourcePosition = orderingItems.length
-      ? Api.playlistPositionAt(orderingItems, sourceIndex) : sourceIndex
-    var destinationPosition = orderingItems.length
-      ? Api.playlistPositionAt(orderingItems, destinationIndex) : destinationIndex
-    var previousPlaylistItems = playlistItems
-    var previousDetailItems = detailItems
-    if (selectedMatches)
-      playlistItems = Api.reorderedPlaylistItemsAtPositions(playlistItems,
-        sourcePosition, destinationPosition)
-    if (detailMatches)
-      detailItems = Api.reorderedPlaylistItemsAtPositions(detailItems,
-        sourcePosition, destinationPosition)
 
-    playlistActionBusy = true
-    spotifyApi.request("PUT", "/playlists/" + encodeURIComponent(String(target.id)) + "/items",
-      null, body, function(status, payload, error) {
-        root.playlistActionBusy = false
-        if (error) {
-          if (selectedMatches && root.selectedPlaylist
-              && String(root.selectedPlaylist.id || "") === playlistId)
-            root.playlistItems = previousPlaylistItems
-          if (detailMatches && root.detailItem && root.detailItem.type === "playlist"
-              && String(root.detailItem.id || "") === playlistId)
-            root.detailItems = previousDetailItems
-          root.fail(error)
-          return
-        }
-        root.updatePlaylistSnapshot(target.id, payload && payload.snapshot_id)
-        root.succeed("Playlist order updated")
-      })
-  }
-
-  function reorderPlaylistItem(sourceIndex, destinationIndex, playlist, count,
-      sourceItems) {
-    var target = playlist || selectedPlaylist
-    if (!playlistOwned(target)) return
-    requestPlaylistItemReorder(sourceIndex, destinationIndex, target, count,
-      sourceItems)
-  }
-
-  function movePlaylistItem(index, delta, playlist, count) {
-    var source = Math.max(0, Math.floor(Number(index) || 0))
-    var direction = Number(delta || 0) < 0 ? -1 : 1
-    requestPlaylistItemReorder(source, source + direction,
-      playlist || selectedPlaylist, count)
-  }
 
   function detailPageFromPayload(payload, type, parent) {
     var container = payload || {}

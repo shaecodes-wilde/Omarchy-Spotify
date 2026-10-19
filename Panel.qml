@@ -100,6 +100,7 @@ Item {
   property string contextSourceUri: ""
   property string contextPlaybackUri: ""
   property int contextSourceIndex: -1
+  property bool contextIsQueue: false
   property var contextPlaylist: null
   property var pendingPlaylistItem: null
   property string newPlaylistName: ""
@@ -135,6 +136,7 @@ Item {
     && service && service.detailItem && service.detailItem.type === "artist"
     && artistSearchText.trim() !== ""
   readonly property bool shortcutsBlocked: mediaContextMenu.opened
+    || playlistEditor.opened
     || playlistPicker.opened || createPlaylistPopup.opened || sleepPopup.opened
     || shortcutHelpPopup.opened || lyricsInstallPopup.opened
   readonly property bool shortcutHintsEnabled: service
@@ -332,6 +334,7 @@ Item {
     contextPlaybackUri = playbackContextUri === undefined
       ? contextSourceUri : String(playbackContextUri || "")
     contextSourceIndex = index === undefined ? -1 : Math.floor(Number(index))
+    contextIsQueue = currentTab === "queue"
     contextPlaylist = playlistForContext(contextSourceUri)
     mediaContextMenu.x = Math.max(Style.space(6), Math.min(
       window.width - mediaContextMenu.width - Style.space(6), Number(sceneX) || 0))
@@ -341,6 +344,7 @@ Item {
   }
 
   function dismissTransientPopup() {
+    if (playlistEditor.opened) { playlistEditor.close(); return true }
     if (lyricsInstallPopup.opened && (!service || !service.lyricsPluginBusy)) {
       lyricsInstallPopup.close()
       return true
@@ -944,7 +948,7 @@ Item {
       rowIndex: index,
       currentIndex: sidebar.playlistList.currentIndex,
       count: sidebar.playlistList.count,
-      tabRowIndex: firstVisibleIndexOf(playlistShortcuts),
+      tabRowIndex: firstVisibleIndexOf(sidebar.playlistList),
       atList: panelCursorRegion === "sidebar"
         && panelCursorAction === "sidebar-playlists",
       previousIsCurrent: panelCursorRegion === "sidebar"
@@ -2299,8 +2303,12 @@ Item {
   }
 
   function openPlaylistPicker(item) {
-    if (!item || item.kind !== "item") return
-    pendingPlaylistItem = item
+    var items = Array.isArray(item) ? item : [item]
+    items = items.filter(function(value) {
+      return value && value.kind === "item" && ["track", "episode"].indexOf(value.type) >= 0
+    })
+    if (!items.length) return
+    pendingPlaylistItem = items
     playlistPicker.open()
   }
 
@@ -2668,13 +2676,15 @@ Item {
       ContextMenuButton {
         contextAction: "ctx-play"
         visible: root.contextItem
+          && (!root.contextIsQueue || (root.service && root.service.queueCanActivate))
           && ["show", "audiobook"].indexOf(root.contextItem.type) < 0
         text: "Play"
         iconText: "󰐊"
         onClicked: {
           mediaContextMenu.close()
-          root.activateMedia(root.contextItem, root.contextSourceItems,
-            root.contextPlaybackUri)
+          if (root.contextIsQueue) {
+            if (root.service) root.service.activateQueueItem(root.contextItem)
+          } else root.activateMedia(root.contextItem, root.contextSourceItems, root.contextPlaybackUri)
         }
       }
 
@@ -2740,6 +2750,18 @@ Item {
         onClicked: {
           mediaContextMenu.close()
           root.openItem(root.contextItem)
+        }
+      }
+
+      ContextMenuButton {
+        contextAction: "ctx-edit-playlist"
+        visible: root.contextItem && root.service && root.service.playlistOwned(root.contextItem)
+        text: "Edit playlist details…"
+        enabled: root.service && !root.service.playlistActionBusy
+        onClicked: {
+          playlistEditor.playlist = root.contextItem
+          mediaContextMenu.close()
+          playlistEditor.open()
         }
       }
 
@@ -2822,7 +2844,7 @@ Item {
         visible: root.contextPlaylist && root.service
           && root.service.playlistEditable(root.contextPlaylist)
           && root.contextItem && root.contextItem.kind === "item"
-        text: "Remove from playlist"
+        text: "Remove all copies from playlist"
         iconText: "󰅖"
         onClicked: {
           var position = root.playlistPosition(root.contextItem)
@@ -2887,8 +2909,8 @@ Item {
 
       Text {
         width: parent.width
-        text: root.pendingPlaylistItem
-          ? "Add “" + String(root.pendingPlaylistItem.name || "song") + "” to a playlist"
+        text: root.pendingPlaylistItem && root.pendingPlaylistItem.length
+          ? "Add " + root.pendingPlaylistItem.length + " selected items to a playlist"
           : "Add to playlist"
         color: root.foreground
         font.family: root.fontFamily
@@ -2930,7 +2952,7 @@ Item {
           onClicked: {
             if (!root.service) return
             root.service.createPlaylist(root.newPlaylistName, function(playlist) {
-              if (root.pendingPlaylistItem) root.service.addItemToPlaylist(
+              if (root.pendingPlaylistItem) root.service.addItemsToPlaylist(
                 root.pendingPlaylistItem, playlist)
               root.newPlaylistName = ""
               playlistPicker.close()
@@ -2968,13 +2990,15 @@ Item {
           leftAlign: true
           onClicked: {
             if (root.service && root.pendingPlaylistItem)
-              root.service.addItemToPlaylist(root.pendingPlaylistItem, modelData)
+              root.service.addItemsToPlaylist(root.pendingPlaylistItem, modelData)
             playlistPicker.close()
           }
         }
       }
     }
   }
+
+  PlaylistEditor { id: playlistEditor; parent: window.contentItem; controller: root }
 
   Popup {
     id: createPlaylistPopup
@@ -3229,6 +3253,12 @@ Item {
       }
       Keys.onEscapePressed: function(event) {
         root.latchShortcutMode()
+        var selectedCollection = root.pageCollection()
+        if (selectedCollection && selectedCollection.selectionCount > 0) {
+          selectedCollection.clearSelection()
+          event.accepted = true
+          return
+        }
         if (root.dismissTransientPopup()) {
           root.disarmEscapeClose()
           event.accepted = true
@@ -4457,6 +4487,10 @@ Item {
       MediaCollection {
         anchors.fill: parent
         service: root.service
+          onBatchQueueRequested: function(items) { if (root.service) root.service.addItemsToQueue(items) }
+          onBatchPlaylistRequested: function(items) { root.openPlaylistPicker(items) }
+          onBatchSaveRequested: function(items) { if (root.service) root.service.toggleSavedItems(items) }
+          onBatchRemoveRequested: function(items) { if (root.service) root.service.removePlaylistItems(items, actionPlaylist) }
         sourceItems: root.service ? root.service.discoverPlaylists : []
         filterText: root.discoverFilter
         showFilter: false
@@ -4756,6 +4790,10 @@ Item {
                   - parent.spacing)
                 keyboardListId: "list-albums"
                 service: root.service
+          onBatchQueueRequested: function(items) { if (root.service) root.service.addItemsToQueue(items) }
+          onBatchPlaylistRequested: function(items) { root.openPlaylistPicker(items) }
+          onBatchSaveRequested: function(items) { if (root.service) root.service.toggleSavedItems(items) }
+          onBatchRemoveRequested: function(items) { if (root.service) root.service.removePlaylistItems(items, actionPlaylist) }
                 sourceItems: root.service ? root.service.artistAlbums : []
                 showFilter: false
                 showQueue: false
@@ -4801,6 +4839,10 @@ Item {
                   * (artistThisIsRow.visible ? 2 : 1))
                 keyboardListId: "list-songs"
                 service: root.service
+          onBatchQueueRequested: function(items) { if (root.service) root.service.addItemsToQueue(items) }
+          onBatchPlaylistRequested: function(items) { root.openPlaylistPicker(items) }
+          onBatchSaveRequested: function(items) { if (root.service) root.service.toggleSavedItems(items) }
+          onBatchRemoveRequested: function(items) { if (root.service) root.service.removePlaylistItems(items, actionPlaylist) }
                 sourceItems: root.service ? root.service.artistSongs : []
                 showFilter: false
                 showQueue: true
@@ -5067,6 +5109,10 @@ Item {
             - parent.spacing * 2)
           visible: !detailRoot.isArtist
           service: root.service
+          onBatchQueueRequested: function(items) { if (root.service) root.service.addItemsToQueue(items) }
+          onBatchPlaylistRequested: function(items) { root.openPlaylistPicker(items) }
+          onBatchSaveRequested: function(items) { if (root.service) root.service.toggleSavedItems(items) }
+          onBatchRemoveRequested: function(items) { if (root.service) root.service.removePlaylistItems(items, actionPlaylist) }
           sourceItems: root.service ? root.service.detailItems : []
           filterText: root.detailFilter
           sortKey: root.detailSort
@@ -5171,6 +5217,10 @@ Item {
           width: parent.width
           height: Math.max(40, parent.height - libraryTypes.height - parent.spacing)
           service: root.service
+          onBatchQueueRequested: function(items) { if (root.service) root.service.addItemsToQueue(items) }
+          onBatchPlaylistRequested: function(items) { root.openPlaylistPicker(items) }
+          onBatchSaveRequested: function(items) { if (root.service) root.service.toggleSavedItems(items) }
+          onBatchRemoveRequested: function(items) { if (root.service) root.service.removePlaylistItems(items, actionPlaylist) }
           sourceItems: root.service ? root.service.libraryItems(root.libraryType) : []
           filterText: root.libraryFilter
           sortKey: root.librarySort
@@ -5339,6 +5389,10 @@ Item {
           width: parent.width
           height: Math.max(40, parent.height - selectedPlaylistHeader.height - parent.spacing)
           service: root.service
+          onBatchQueueRequested: function(items) { if (root.service) root.service.addItemsToQueue(items) }
+          onBatchPlaylistRequested: function(items) { root.openPlaylistPicker(items) }
+          onBatchSaveRequested: function(items) { if (root.service) root.service.toggleSavedItems(items) }
+          onBatchRemoveRequested: function(items) { if (root.service) root.service.removePlaylistItems(items, actionPlaylist) }
           sourceItems: root.service ? root.service.playlistItems : []
           filterText: root.playlistFilter
           sortKey: root.playlistSort

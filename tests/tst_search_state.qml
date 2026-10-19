@@ -113,4 +113,18 @@ TestCase {
     calls[3].callback(200, {}, "")
     compare(state.searchError, "")
   }
+  function test_forcedOverviewReplacesOldFirstPage() {
+    var state = createTemporaryObject(controller, testCase)
+    state.searchAll("hello")
+    calls[0].callback(200, { tracks: { items: [{ type: "track", id: "old", uri: "spotify:track:old", name: "old" }] } }, "")
+    calls[1].callback(200, {}, "")
+    calls[2].callback(200, {}, "")
+    compare(state.searchItems("track").length, 1)
+    state.searchAll("hello", true)
+    calls[3].callback(200, { tracks: { items: [] } }, "")
+    calls[4].callback(200, {}, "")
+    calls[5].callback(200, {}, "")
+    compare(state.searchItems("track").length, 0)
+    verify(state.searchLoadedTypes.all)
+  }
 }

@@ -164,6 +164,10 @@ import "Api.js" as Api
           id: resultsView
           anchors.fill: parent
           service: panel.service
+          onBatchQueueRequested: function(items) { if (panel.service) panel.service.addItemsToQueue(items) }
+          onBatchPlaylistRequested: function(items) { panel.openPlaylistPicker(items) }
+          onBatchSaveRequested: function(items) { if (panel.service) panel.service.toggleSavedItems(items) }
+          onBatchRemoveRequested: function(items) { if (panel.service) panel.service.removePlaylistItems(items, actionPlaylist) }
           sourceItems: searchRoot.items
           showFilter: false
           showQueue: true

@@ -55,7 +55,14 @@ Item {
   property real dragSceneY: 0
   property int dragAutoScrollDirection: 0
   property bool enableSelection: true
-  property bool allowRemove: false
+  readonly property var actionPlaylist: {
+    if (!service || !contextUri) return null
+    if (service.selectedPlaylist && service.selectedPlaylist.uri === contextUri) return service.selectedPlaylist
+    if (service.detailItem && service.detailItem.type === "playlist" && service.detailItem.uri === contextUri) return service.detailItem
+    return null
+  }
+  property bool allowRemove: !!actionPlaylist && service.playlistEditable(actionPlaylist)
+  property bool showTableTools: showSort
   property var selection: ({})
   property int selectionAnchor: -1
   readonly property int selectionCount: Object.keys(selection).length
@@ -98,14 +105,14 @@ Item {
   function selectedItems() { return Selection.items(sourceItems, selection) }
   function isSelected(item) {
     if (selectionCount === 0) return false
-    return selection[Selection.key(item, sourceItems.indexOf(item))] === true
+    return selection[Selection.key(item)] === true
   }
   function clearSelection() { selection = ({}); selectionAnchor = -1 }
   function restoreCurrentIndex(index) {
     mediaList.currentIndex = Math.min(mediaList.count - 1, Math.max(0, Math.floor(Number(index) || 0)))
   }
   function selectRow(index, modifiers) {
-    selection = Selection.select(sourceItems, visibleItems, selection, index,
+    selection = Selection.select(visibleItems, selection, index,
       selectionAnchor, (modifiers & Qt.ControlModifier) !== 0,
       (modifiers & Qt.ShiftModifier) !== 0)
     if ((modifiers & Qt.ShiftModifier) === 0 || selectionAnchor < 0) selectionAnchor = index
@@ -113,8 +120,7 @@ Item {
     mediaList.forceActiveFocus()
   }
   function selectAll() {
-    selection = Selection.select(sourceItems, visibleItems, ({}), visibleItems.length - 1,
-      0, false, true)
+    selection = Selection.select(visibleItems, ({}), visibleItems.length - 1, 0, false, true)
   }
   function setSort(value) {
     sortKey = value
@@ -437,7 +443,7 @@ Item {
       id: columnHeaders
       width: parent.width
       height: visible ? implicitHeight : 0
-      visible: root.trackTable
+      visible: root.trackTable && root.showTableTools
       spacing: Style.space(5)
       Button {
         text: root.compactRows ? "Compact" : "Comfortable"

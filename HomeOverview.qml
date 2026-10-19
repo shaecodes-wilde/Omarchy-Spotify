@@ -83,11 +83,16 @@ ScrollView {
           font.pixelSize: Style.font.caption
         }
         MediaCollection {
+          enableSelection: false
           width: parent.width
           height: parent.items.length ? Style.space(66) * parent.items.length : 0
           visible: height > 0
           sourceItems: parent.items
           service: controller.service
+          onBatchQueueRequested: function(items) { if (controller.service) controller.service.addItemsToQueue(items) }
+          onBatchPlaylistRequested: function(items) { controller.openPlaylistPicker(items) }
+          onBatchSaveRequested: function(items) { if (controller.service) controller.service.toggleSavedItems(items) }
+          onBatchRemoveRequested: function(items) { if (controller.service) controller.service.removePlaylistItems(items, actionPlaylist) }
           stateKey: "home:overview:" + modelData.type
           keyboardListId: "list-home-" + modelData.type
           showFilter: false

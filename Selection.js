@@ -1,11 +1,13 @@
 .pragma library
 
-function key(item, index) {
-  return String(item && item.uri || "") + "|" + String(item
-    && item.playlistPosition !== undefined ? item.playlistPosition : index)
+function key(item) {
+  var row = item || {}
+  // Playlist positions distinguish copies; history timestamps distinguish repeat listens.
+  return String(row.uri || "") + "|" + String(row.playlistPosition !== undefined
+    ? row.playlistPosition : (row.playedAt || row.addedAt || ""))
 }
 
-function select(source, visible, selected, index, anchor, toggle, range) {
+function select(visible, selected, index, anchor, toggle, range) {
   if (index < 0 || index >= visible.length) return selected
   var next = toggle ? Object.assign({}, selected) : ({})
   var first = range && anchor >= 0 ? Math.min(anchor, index) : index
@@ -13,7 +15,7 @@ function select(source, visible, selected, index, anchor, toggle, range) {
   for (var i = first; i <= last; i++) {
     var item = visible[i]
     if (!item || item.kind !== "item") continue
-    var identity = key(item, source.indexOf(item))
+    var identity = key(item)
     if (toggle && !range && next[identity]) delete next[identity]
     else next[identity] = true
   }

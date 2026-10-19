@@ -22,6 +22,8 @@ TestCase {
     property var playlists: []
     property var selectedPlaylist: null
     property var detailItem: null
+    property var playlistItems: []
+    property var detailItems: []
     function playlistEditable(playlist) { return !!playlist && playlist.ownerId === "me" }
     function playlistOwned(playlist) { return playlistEditable(playlist) }
     function updatePlaylistSnapshot(id, snapshot) {}
@@ -35,6 +37,7 @@ TestCase {
     requests = []; failures = []; reloads = 0
     fakeHost.dataSerial = 0; fakeHost.playlistActionBusy = false
     fakeHost.playlists = []; fakeHost.selectedPlaylist = null; fakeHost.detailItem = null
+    fakeHost.playlistItems = []; fakeHost.detailItems = []
   }
   function playlist() { return { id: "p", uri: "spotify:playlist:p", type: "playlist", ownerId: "me", snapshotId: "s1" } }
   function test_batchesPreserveOrderAndStopOnUnconfirmedWrite() {
@@ -90,5 +93,33 @@ TestCase {
     compare(fakeHost.selectedPlaylist.name, "New title")
     compare(fakeHost.detailItem.description, "New description")
     compare(fakeHost.playlists[0].name, "New title")
+  }
+  function test_reorderRollsBackAndReconcilesFailure() {
+    var item = createTemporaryObject(actions, testCase)
+    fakeHost.selectedPlaylist = playlist()
+    fakeHost.playlistItems = [
+      { kind: "item", uri: "spotify:track:a", playlistPosition: 0 },
+      { kind: "item", uri: "spotify:track:b", playlistPosition: 1 }
+    ]
+    item.reorderPlaylistItem(0, 1, fakeHost.selectedPlaylist, 2, fakeHost.playlistItems)
+    compare(fakeHost.playlistItems[0].uri, "spotify:track:b")
+    requests[0].callback(0, null, "Not confirmed")
+    compare(fakeHost.playlistItems[0].uri, "spotify:track:a")
+    compare(reloads, 1)
+    verify(!fakeHost.playlistActionBusy)
+  }
+  function test_reorderIgnoresLateAccountResponse() {
+    var item = createTemporaryObject(actions, testCase)
+    fakeHost.selectedPlaylist = playlist()
+    fakeHost.playlistItems = [
+      { kind: "item", uri: "spotify:track:a", playlistPosition: 0 },
+      { kind: "item", uri: "spotify:track:b", playlistPosition: 1 }
+    ]
+    item.reorderPlaylistItem(0, 1, fakeHost.selectedPlaylist, 2, fakeHost.playlistItems)
+    fakeHost.dataSerial++
+    fakeHost.playlistItems = []
+    requests[0].callback(500, null, "old error")
+    compare(fakeHost.playlistItems.length, 0)
+    compare(failures.length, 0)
   }
 }
