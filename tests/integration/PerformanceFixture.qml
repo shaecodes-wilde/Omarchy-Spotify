@@ -2,6 +2,7 @@ import QtQuick
 import Quickshell
 import Quickshell.Io
 import "plugin" as Plugin
+import "plugin/Api.js" as Api
 
 ShellRoot {
   id: root
@@ -26,6 +27,12 @@ ShellRoot {
     function releasePopout(owner) { if (activePopout === owner) activePopout = null }
     property color foreground: "white"
     property color barForeground: "white"
+    property color background: "#111111"
+    property color urgent: "#55bb99"
+    property string fontFamily: "sans-serif"
+    property bool foregroundAnimationEnabled: false
+    function hideTooltip(owner) {}
+    function showTooltip(owner, text) {}
   }
   Window {
     id: window
@@ -40,16 +47,23 @@ ShellRoot {
       libraryType: "tracks"
     }
     Loader {
+      id: miniLoader
       source: root.mode === "mini" ? "mini.qml" : ""
       onLoaded: { item.bar = fakeBar; item.popupOpen = true }
     }
   }
   function tracks(count, kind) {
     var rows = []
-    for (var i = 0; i < count; i++) rows.push({ type: "track", id: kind + i,
-      uri: "spotify:track:" + kind + i, name: "Fixture song " + i,
-      artist: "Fixture artist", artists: [{id: "artist", name: "Fixture artist"}],
-      album: "Fixture album", durationMs: 180000, imageUrl: "" })
+    for (var i = 0; i < count; i++) {
+      var id = (kind + "000000000000000000000" + i).slice(-22)
+      var artist = {type: "artist", id: "0000000000000000artist", uri: "spotify:artist:0000000000000000artist", name: "Fixture artist"}
+      rows.push(Api.normalizeTrack({ added_at: "2026-10-01T12:00:00Z", track: {
+        type: "track", id: id, uri: "spotify:track:" + id, name: "Fixture song " + i,
+        artists: [artist], duration_ms: 180000, track_number: i%12+1, disc_number: 1,
+        album: { type: "album", id: "00000000000000000album", uri: "spotify:album:00000000000000000album",
+          name: "Fixture album", artists: [artist], images: [], release_date: "2026-01-01", total_tracks: 12 }
+      } }, 96))
+    }
     return rows
   }
   function populate() {
@@ -65,6 +79,9 @@ ShellRoot {
     onTriggered: {
       service.localPlaybackStopped = true
       service.setUiVisible("fixture", root.mode !== "closed")
+      if (root.mode !== "closed") service.remotePlayback = { playing: false, progressSeconds: 30,
+        receivedAt: Date.now(), device: { id: "fixture-remote", name: "Fixture device", active: true,
+        supportsVolume: true, volumePercent: 50 }, item: root.tracks(1,"current")[0] }
       service.activeView = "library"
       if (root.mode !== "closed" && root.mode !== "mini") root.populate()
       console.log("PERFORMANCE_READY")
@@ -78,9 +95,17 @@ ShellRoot {
     property int count: 0
     onTriggered: {
       root.feedbackAt = Date.now()
-      panel.panelCursorRegion = "footer"
-      panel.panelCursorAction = count % 2 ? "play" : "next"
-      Qt.callLater(function() { console.log("PERFORMANCE_FEEDBACK_MS " + (Date.now()-root.feedbackAt)) })
+      if (root.mode === "mini" && miniLoader.item) {
+        miniLoader.item.miniCursorActive = true
+        miniLoader.item.miniCursor = count % 2 ? "play" : "next"
+      } else {
+        panel.panelCursorRegion = "footer"
+        panel.panelCursorAction = count % 2 ? "play" : "next"
+      }
+      Qt.callLater(function() {
+        console.log("PERFORMANCE_FEEDBACK_MS " + (Date.now()-root.feedbackAt))
+        if (feedback.count >= 20) console.log("PERFORMANCE_FEEDBACK_DONE")
+      })
       if (++count >= 20) stop()
     }
   }

@@ -32,7 +32,8 @@ def wait_for(log, marker, process, timeout=120, occurrences=1):
 
 
 def run_case(tree, mode, count, args, output, name):
-    with tempfile.TemporaryDirectory(prefix='omarchy-perf-') as temporary:
+    with tempfile.TemporaryDirectory(prefix='sb-', dir=os.environ.get('XDG_RUNTIME_DIR', '/tmp')) as short_runtime, \
+            tempfile.TemporaryDirectory(prefix='omarchy-perf-') as temporary:
         temporary = Path(temporary)
         app = temporary / 'app'
         plugin = app / 'plugin'
@@ -47,8 +48,8 @@ def run_case(tree, mode, count, args, output, name):
         # All application state and credentials are isolated; system session MPRIS is hidden.
         mock_bin = temporary / 'bin'
         mock_bin.mkdir()
-        runtime = temporary / 'runtime'
-        runtime.mkdir(mode=0o700)
+        # Unix IPC socket paths must remain below the kernel's 108-byte limit.
+        runtime = Path(short_runtime)
         (plugin / 'scripts').mkdir()
         for destination in (mock_bin / 'secret-tool', mock_bin / 'systemctl',
                             plugin / 'scripts/playback-runtime.sh', plugin / 'scripts/setup-playback.sh',
@@ -88,6 +89,8 @@ def run_case(tree, mode, count, args, output, name):
                 pid = pids[0]
                 if mode == 'navigation':
                     wait_for(log, 'PERFORMANCE_NAVIGATION_DONE', process)
+                if mode != 'closed':
+                    wait_for(log, 'PERFORMANCE_FEEDBACK_DONE', process)
                 time.sleep(args.settle)
                 samples = []
                 for sample_index in range(args.samples):
@@ -101,6 +104,7 @@ def run_case(tree, mode, count, args, output, name):
                 feedback = [float(line.split('PERFORMANCE_FEEDBACK_MS ')[1]) for line in log.read_text().splitlines() if 'PERFORMANCE_FEEDBACK_MS ' in line]
                 navigation = [float(line.split('PERFORMANCE_NAVIGATION_MS ')[1]) for line in log.read_text().splitlines() if 'PERFORMANCE_NAVIGATION_MS ' in line]
                 return dict(samples=samples, median={key: statistics.median(row[key] for row in samples) for key in samples[0]},
+                            feedback_sample_count=len(feedback),
                             feedback_p95_ms=sorted(feedback)[max(0, int(len(feedback)*.95)-1)] if feedback else None,
                             navigation_p95_ms=sorted(navigation)[max(0, int(len(navigation)*.95)-1)] if navigation else None,
                             plateau_growth_kib=samples[-1]['pss_kib']-samples[0]['pss_kib'])
@@ -155,7 +159,8 @@ def main():
             checks = dict(memory=delta['pss_kib'] <= budget,
                           hidden_cpu=mode != 'closed' or delta['cpu_percent'] <= .1,
                           scheduler=mode != 'closed' or delta['switches_per_second'] <= 2,
-                          feedback=results['candidate']['feedback_p95_ms'] is None or results['candidate']['feedback_p95_ms'] <= 100,
+                          feedback=mode == 'closed' or (results['candidate']['feedback_sample_count'] >= 20
+                            and results['candidate']['feedback_p95_ms'] <= 100),
                           cache_plateau=results['candidate']['plateau_growth_kib'] <= 1024)
             if results['baseline']['navigation_p95_ms'] and results['candidate']['navigation_p95_ms'] is not None:
                 delta['navigation_p95_ratio'] = results['candidate']['navigation_p95_ms'] / results['baseline']['navigation_p95_ms']
