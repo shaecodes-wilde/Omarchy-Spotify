@@ -43,6 +43,8 @@ Item {
     shortcutHints: "On",
     showLyrics: "On",
     showArtwork: "On",
+    trackDensity: "Compact",
+    trackColumns: "Album + date",
     showTrackTitle: "On",
     showArtistName: "Off",
     showPausedTrack: "On",
@@ -512,7 +514,7 @@ Item {
       "showVinylRecord", "shortcutPlayer", "shortcutHints", "showLyrics", "showArtwork", "showTrackTitle", "showArtistName",
       "showPausedTrack", "scrollBarText", "scrollSpeed", "maxBarTextWidth",
       "fixedBarWidth", "audioQuality", "clientId", "lastFmUsername", "lastFmApiKey",
-      "discoveryObscurity", "discoveryAdventure"]
+      "discoveryObscurity", "discoveryAdventure", "trackDensity", "trackColumns"]
     for (var i = 0; i < keys.length; i++) {
       var key = keys[i]
       if (source[key] !== undefined) next[key] = source[key]
@@ -526,6 +528,9 @@ Item {
     next.shortcutHints = Api.normalizedShortcutHints(next.shortcutHints)
     next.showLyrics = String(next.showLyrics || "On") === "Off" ? "Off" : "On"
     next.showArtwork = String(next.showArtwork || "On") === "Off" ? "Off" : "On"
+    next.trackDensity = source.trackDensity === "Comfortable" ? "Comfortable" : "Compact"
+    next.trackColumns = ["Album + date", "Album", "Title only"].indexOf(source.trackColumns) >= 0
+      ? source.trackColumns : "Album + date"
     next.showTrackTitle = String(next.showTrackTitle || "On") === "Off" ? "Off" : "On"
     next.showArtistName = String(next.showArtistName || "Off") === "On" ? "On" : "Off"
     next.showPausedTrack = String(next.showPausedTrack || "On") === "Off" ? "Off" : "On"
@@ -1682,6 +1687,52 @@ Item {
     toggleSaved(currentTrackItem)
   }
 
+  function toggleSavedItems(items) {
+    var seen = ({})
+    var rows = (Array.isArray(items) ? items : []).filter(function(item) {
+      if (!item || !item.uri || item.type === "chapter" || seen[item.uri]) return false
+      seen[item.uri] = true
+      return true
+    })
+    if (!rows.length || rows.some(function(item) { return root.isSavedBusy(item) })) return
+    var removing = rows.every(function(item) { return root.isSaved(item) })
+    var expected = dataSerial
+    rows.forEach(function(item) { root.setSavedBusy(item.uri, true) })
+    var completed = 0
+    function finish(error) {
+      if (expected !== root.dataSerial) return
+      rows.forEach(function(item) { root.setSavedBusy(item.uri, false) })
+      // Refresh only the affected, already loaded library categories.
+      var kinds = { track: "tracks", album: "albums", artist: "artists", show: "shows",
+        episode: "episodes", audiobook: "audiobooks", playlist: "playlists" }
+      var refreshed = ({})
+      rows.forEach(function(item) {
+        var kind = kinds[item.type]
+        if (!kind || refreshed[kind]) return
+        refreshed[kind] = true
+        var spec = root.libraryCollectionSpec(kind)
+        if (root[spec.loaded]) root.loadLibraryCollection(kind, false)
+      })
+      if (error) root.fail(completed + " items confirmed. " + error + " Check your library before retrying.")
+      else root.succeed(removing ? "Removed selection from your library" : "Saved selection to your library")
+    }
+    function next() {
+      if (expected !== root.dataSerial) return
+      if (completed >= rows.length) { finish(""); return }
+      var batch = rows.slice(completed, completed + 40)
+      var uris = batch.map(function(item) { return item.uri })
+      spotifyApi.request(removing ? "DELETE" : "PUT", "/me/library", { uris: uris }, null,
+        function(status, payload, error) {
+          if (expected !== root.dataSerial) return
+          if (error) { finish(error); return }
+          root.rememberSavedStates(uris, !removing)
+          completed += batch.length
+          next()
+        }, { priority: "interactive", retryRateLimit: false })
+    }
+    next()
+  }
+
   function loadSavedAlbums(append) {
     loadLibraryCollection("albums", append)
   }
@@ -1834,42 +1885,16 @@ Item {
     else playlistRestoreTargetCount = 0
   }
 
-  function createPlaylist(name, callback) {
-    var normalized = String(name || "").trim()
-    if (!normalized || playlistActionBusy) return
-    playlistActionBusy = true
-    spotifyApi.request("POST", "/me/playlists", null, {
-      name: normalized.slice(0, 100),
-      "public": false,
-      description: "Created with Omarchy Spotify"
-    }, function(status, payload, error) {
-      root.playlistActionBusy = false
-      if (error) { root.fail(error); return }
-      var playlist = Api.normalizePlaylist(payload, 96)
-      if (playlist) {
-        root.playlists = [playlist].concat(root.playlists)
-        root.setSavedState(playlist.uri, true)
-        root.succeed("Playlist created")
-        if (typeof callback === "function") callback(playlist)
-      }
-    })
-  }
+  PlaylistActions { id: playlistActions; host: root }
 
-  function addItemToPlaylist(item, playlist) {
-    if (!item || ["track", "episode"].indexOf(item.type) < 0 || !item.uri
-        || !playlist || !playlist.id
-        || playlistActionBusy) return
-    playlistActionBusy = true
-    spotifyApi.request("POST", "/playlists/" + encodeURIComponent(String(playlist.id)) + "/items",
-      null, { uris: [item.uri] }, function(status, payload, error) {
-        root.playlistActionBusy = false
-        if (error) { root.fail(error); return }
-        root.updatePlaylistSnapshot(playlist.id, payload && payload.snapshot_id)
-        root.succeed("Added to " + String(playlist.name || "playlist"))
-        if (root.selectedPlaylist && root.selectedPlaylist.id === playlist.id)
-          root.loadPlaylistItems(false)
-        if (root.detailItem && root.detailItem.id === playlist.id) root.openDetail(root.detailItem)
-      })
+  function createPlaylist(name, callback) { playlistActions.create(name, callback) }
+  function addItemToPlaylist(item, playlist) { playlistActions.writeItems([item], playlist, false) }
+  function addItemsToPlaylist(items, playlist) { playlistActions.writeItems(items, playlist, false) }
+  function updatePlaylistDetails(playlist, name, description) {
+    playlistActions.update(playlist, name, description)
+  }
+  function removePlaylistItems(items, playlist) {
+    playlistActions.writeItems(items, playlist || selectedPlaylist, true)
   }
 
   function registerPlaylistCopy(playlist) {
@@ -2012,19 +2037,7 @@ Item {
   }
 
   function removePlaylistItem(item, index, playlist) {
-    var target = playlist || selectedPlaylist
-    if (!item || !item.uri || !playlistEditable(target) || playlistActionBusy) return
-    playlistActionBusy = true
-    var body = { items: [{ uri: item.uri }] }
-    if (target.snapshotId) body.snapshot_id = target.snapshotId
-    spotifyApi.request("DELETE", "/playlists/" + encodeURIComponent(String(target.id)) + "/items",
-      null, body, function(status, payload, error) {
-        root.playlistActionBusy = false
-        if (error) { root.fail(error); return }
-        root.updatePlaylistSnapshot(target.id, payload && payload.snapshot_id)
-        root.succeed("Removed from playlist")
-        root.reloadPlaylist(target)
-      })
+    removePlaylistItems([item], playlist)
   }
 
   function requestPlaylistItemReorder(sourceIndex, destinationIndex, playlist, count,
@@ -2819,6 +2832,7 @@ Item {
   function search(term, type, force) { return searchController.search(term, type, force) }
   function searchItems(type) { return searchController.searchItems(type) }
   function searchNext(type) { return searchController.searchNext(type) }
+  function searchAll(term, force) { searchController.searchAll(term, force) }
   function loadMoreSearch(type) { return searchController.loadMoreSearch(type) }
   function retrySearch(type) { return searchController.retrySearch(type) }
   function clearSearch() { return searchController.clearSearch() }

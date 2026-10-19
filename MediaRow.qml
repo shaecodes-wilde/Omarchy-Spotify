@@ -25,6 +25,20 @@ BorderSurface {
   property int reorderDropIndicator: 0
   property bool hovered: hoverHandler.hovered
   property bool actionsExpanded: false
+  property bool compactRows: false
+  property bool albumColumn: false
+  property bool dateColumn: false
+  property bool selectionEnabled: false
+  property var draggedItems: itemData ? [itemData] : []
+  property bool externalDragging: false
+  readonly property real albumColumnWidth: albumColumn ? Math.min(200, width * 0.2) : 0
+  readonly property real dateColumnWidth: dateColumn ? Style.space(96) : 0
+  Drag.active: externalDragging
+  Drag.source: root
+  Drag.keys: ["omarchy-spotify-items"]
+  Drag.supportedActions: Qt.CopyAction
+  Drag.hotSpot.x: width / 2
+  Drag.hotSpot.y: height / 2
 
   readonly property bool durationActionVisible: itemData
     && itemData.kind === "item" && Number(itemData.durationMs) > 0
@@ -48,6 +62,7 @@ BorderSurface {
     + Math.max(0, fullActionCount - 1) * Style.space(2)
   readonly property real titleWidthWithFullActions: Math.max(0,
     contentRow.width - artworkSurface.width - fullActionWidth
+      - albumColumnWidth - dateColumnWidth
       - contentRow.spacing * (artworkSurface.visible ? 2 : 1))
   readonly property bool compactActions: Api.mediaRowShouldCompact(
     titleMetrics.advanceWidth, titleWidthWithFullActions, fullActionCount)
@@ -64,6 +79,7 @@ BorderSurface {
   signal reorderDragMoved(real sceneY)
   signal reorderDragFinished(real sceneY)
   signal reorderDragCanceled()
+  signal selectionRequested(int modifiers)
 
   function triggerPrimary() {
     if (browseOnActivate) openRequested(itemData)
@@ -77,7 +93,7 @@ BorderSurface {
 
   width: parent ? parent.width : implicitWidth
   implicitWidth: Style.space(420)
-  implicitHeight: (root.artworkEnabled ? Style.space(66) : Style.space(44))
+  implicitHeight: (root.artworkEnabled && !compactRows ? Style.space(66) : Style.space(44))
     + (root.itemData && root.itemData.discoveryReason ? Style.space(20) : 0)
   height: implicitHeight
   radius: Style.cornerRadius
@@ -105,7 +121,7 @@ BorderSurface {
     id: rowMouseArea
     anchors.fill: parent
     acceptedButtons: Qt.LeftButton | Qt.RightButton
-    preventStealing: root.reorderEnabled
+    preventStealing: root.reorderEnabled || externalCandidate
     cursorShape: root.reorderEnabled
       ? (reorderGesture ? Qt.ClosedHandCursor : Qt.OpenHandCursor)
       : Qt.PointingHandCursor
@@ -114,6 +130,8 @@ BorderSurface {
     property bool reorderGesture: false
     property bool suppressActivation: false
     property real pressSceneY: 0
+    property real pressX: 0
+    property bool externalCandidate: false
 
     function pointerSceneY(mouse) {
       return mapToItem(null, mouse.x, mouse.y).y
@@ -122,13 +140,26 @@ BorderSurface {
     onPressed: function(mouse) {
       suppressActivation = false
       reorderCandidate = mouse.button === Qt.LeftButton && root.reorderEnabled
+      externalCandidate = mouse.button === Qt.LeftButton && root.selectionEnabled
+        && (mouse.modifiers & Qt.ControlModifier) !== 0
       reorderGesture = false
-      if (reorderCandidate) pressSceneY = pointerSceneY(mouse)
+      if (reorderCandidate || externalCandidate) {
+        pressSceneY = pointerSceneY(mouse)
+        pressX = mouse.x
+      }
     }
 
     onPositionChanged: function(mouse) {
-      if (!reorderCandidate || !pressed) return
+      if ((!reorderCandidate && !externalCandidate) || !pressed) return
       var sceneY = pointerSceneY(mouse)
+      if (externalCandidate && (root.externalDragging
+          || Math.abs(sceneY - pressSceneY) + Math.abs(mouse.x - pressX) >= Style.space(6))) {
+        suppressActivation = true
+        root.externalDragging = true
+        root.Drag.hotSpot.x = mouse.x
+        root.Drag.hotSpot.y = mouse.y
+        return
+      }
       if (!reorderGesture
           && Math.abs(sceneY - pressSceneY) >= Style.space(6)) {
         reorderGesture = true
@@ -139,6 +170,9 @@ BorderSurface {
     }
 
     onReleased: function(mouse) {
+      if (root.externalDragging) root.Drag.drop()
+      root.externalDragging = false
+      externalCandidate = false
       if (reorderGesture) root.reorderDragFinished(pointerSceneY(mouse))
       reorderCandidate = false
       reorderGesture = false
@@ -149,6 +183,8 @@ BorderSurface {
       reorderCandidate = false
       reorderGesture = false
       suppressActivation = false
+      externalCandidate = false
+      root.externalDragging = false
     }
 
     onClicked: function(mouse) {
@@ -160,8 +196,12 @@ BorderSurface {
         var scenePoint = root.mapToItem(null, mouse.x, mouse.y)
         root.contextRequested(root.itemData, scenePoint.x, scenePoint.y)
       } else {
-        root.triggerPrimary()
+        if (root.selectionEnabled) root.selectionRequested(mouse.modifiers)
+        else root.triggerPrimary()
       }
+    }
+    onDoubleClicked: function(mouse) {
+      if (root.selectionEnabled && mouse.modifiers === Qt.NoModifier) root.triggerPrimary()
     }
   }
 
@@ -215,7 +255,9 @@ BorderSurface {
 
     Column {
       width: Math.max(20, parent.width - artworkSurface.width - actionRow.width
-        - parent.spacing * (artworkSurface.visible ? 2 : 1))
+        - root.albumColumnWidth - root.dateColumnWidth
+        - parent.spacing * ((artworkSurface.visible ? 2 : 1)
+          + (root.albumColumn ? 1 : 0) + (root.dateColumn ? 1 : 0)))
       anchors.verticalCenter: parent.verticalCenter
       spacing: Style.space(3)
 
@@ -254,6 +296,27 @@ BorderSurface {
         font.pixelSize: Style.font.caption
         elide: Text.ElideRight
       }
+    }
+
+    Text {
+      width: root.albumColumnWidth
+      visible: root.albumColumn
+      anchors.verticalCenter: parent.verticalCenter
+      text: root.itemData ? String(root.itemData.album || "") : ""
+      color: root.muted
+      font.family: root.fontFamily
+      font.pixelSize: Style.font.bodySmall
+      elide: Text.ElideRight
+    }
+    Text {
+      width: root.dateColumnWidth
+      visible: root.dateColumn
+      anchors.verticalCenter: parent.verticalCenter
+      text: root.itemData ? String(root.itemData.addedAt || root.itemData.playedAt || "").slice(0, 10) : ""
+      color: root.muted
+      font.family: root.fontFamily
+      font.pixelSize: Style.font.caption
+      elide: Text.ElideRight
     }
 
     Row {

@@ -4,6 +4,7 @@ import qs.Commons
 import qs.Ui
 
 import "Api.js" as Api
+import "Selection.js" as Selection
 
 Item {
   id: root
@@ -53,6 +54,18 @@ Item {
   property int dragDestinationIndex: -1
   property real dragSceneY: 0
   property int dragAutoScrollDirection: 0
+  property bool enableSelection: true
+  property bool allowRemove: false
+  property var selection: ({})
+  property int selectionAnchor: -1
+  readonly property int selectionCount: Object.keys(selection).length
+  readonly property bool trackTable: sourceItems.length > 0 && sourceItems[0].kind === "item"
+  readonly property bool compactRows: !service || !service.settings
+    || service.settings.trackDensity !== "Comfortable"
+  readonly property string columns: service && service.settings
+    ? String(service.settings.trackColumns || "Album + date") : "Album + date"
+  readonly property bool albumColumn: trackTable && width >= Style.space(860) && columns !== "Title only"
+  readonly property bool dateColumn: albumColumn && width >= Style.space(1100) && columns === "Album + date"
 
   readonly property var visibleItems: Api.filteredSorted(sourceItems, filterText, sortKey)
   readonly property bool playbackUsesVisibleOrder: Api.playbackUsesVisibleOrder(
@@ -77,6 +90,40 @@ Item {
   signal reorderRequested(int sourceIndex, int destinationIndex)
   signal loadMoreRequested()
   signal viewStateChanged(string filterText, string sortKey, real contentY)
+  signal batchQueueRequested(var items)
+  signal batchPlaylistRequested(var items)
+  signal batchSaveRequested(var items)
+  signal batchRemoveRequested(var items)
+
+  function selectedItems() { return Selection.items(sourceItems, selection) }
+  function isSelected(item) {
+    if (selectionCount === 0) return false
+    return selection[Selection.key(item, sourceItems.indexOf(item))] === true
+  }
+  function clearSelection() { selection = ({}); selectionAnchor = -1 }
+  function restoreCurrentIndex(index) {
+    mediaList.currentIndex = Math.min(mediaList.count - 1, Math.max(0, Math.floor(Number(index) || 0)))
+  }
+  function selectRow(index, modifiers) {
+    selection = Selection.select(sourceItems, visibleItems, selection, index,
+      selectionAnchor, (modifiers & Qt.ControlModifier) !== 0,
+      (modifiers & Qt.ShiftModifier) !== 0)
+    if ((modifiers & Qt.ShiftModifier) === 0 || selectionAnchor < 0) selectionAnchor = index
+    mediaList.currentIndex = index
+    mediaList.forceActiveFocus()
+  }
+  function selectAll() {
+    selection = Selection.select(sourceItems, visibleItems, ({}), visibleItems.length - 1,
+      0, false, true)
+  }
+  function setSort(value) {
+    sortKey = value
+    viewStateChanged(filterText, sortKey, mediaList.contentY)
+  }
+  function cycleColumns() {
+    var values = ["Album + date", "Album", "Title only"]
+    if (service) service.persistSettings({ trackColumns: values[(values.indexOf(columns) + 1) % values.length] })
+  }
 
   readonly property bool filterScanAvailable: scanner.available
   readonly property bool filterScanPaused: scanner.paused
@@ -120,6 +167,7 @@ Item {
     var next = Api.listIndexAfterMove(mediaList.count, mediaList.currentIndex, delta)
     if (next < 0) return false
     mediaList.currentIndex = next
+    if (keyboardShiftHeld) selectRow(next, Qt.ShiftModifier)
     return true
   }
 
@@ -286,6 +334,9 @@ Item {
   }
 
   Component.onCompleted: restoreView()
+  onSourceItemsChanged: selection = Selection.retain(sourceItems, selection)
+  onFilterTextChanged: clearSelection()
+  onSortKeyChanged: clearSelection()
   onRestoredContentYChanged: resetRestore()
   onStateKeyChanged: resetRestore()
   onRestoreReadyChanged: if (restoreReady) resetRestore()
@@ -363,11 +414,49 @@ Item {
       }
     }
 
+    Flow {
+      id: selectionTools
+      width: parent.width
+      height: visible ? implicitHeight : 0
+      visible: root.selectionCount > 0
+      spacing: Style.space(5)
+      Text {
+        text: root.selectionCount + " selected"
+        color: Color.foreground
+        font.family: Style.font.family
+        font.pixelSize: Style.font.bodySmall
+      }
+      Button { visible: root.showQueue; text: "Queue"; onClicked: root.batchQueueRequested(root.selectedItems()) }
+      Button { visible: root.showPlaylist; text: "Add to playlist…"; onClicked: root.batchPlaylistRequested(root.selectedItems()) }
+      Button { visible: root.showSave; text: "Save / unsave"; onClicked: root.batchSaveRequested(root.selectedItems()) }
+      Button { visible: root.allowRemove; text: "Remove all copies"; onClicked: root.batchRemoveRequested(root.selectedItems()) }
+      Button { text: "Clear"; onClicked: root.clearSelection() }
+    }
+
+    Row {
+      id: columnHeaders
+      width: parent.width
+      height: visible ? implicitHeight : 0
+      visible: root.trackTable
+      spacing: Style.space(5)
+      Button {
+        text: root.compactRows ? "Compact" : "Comfortable"
+        tooltipText: "Change track row density"
+        onClicked: if (root.service) root.service.persistSettings({ trackDensity: root.compactRows ? "Comfortable" : "Compact" })
+      }
+      Button { text: "Columns"; tooltipText: root.columns; onClicked: root.cycleColumns() }
+      Button { text: "Title"; onClicked: root.setSort("name") }
+      Button { visible: root.albumColumn; text: "Album"; onClicked: root.setSort("album") }
+      Button { visible: root.dateColumn; text: "Added"; onClicked: root.setSort(root.sortKey === "date" ? "date-asc" : "date") }
+      Button { text: "Time"; onClicked: root.setSort("duration") }
+    }
+
     ListView {
       id: mediaList
       width: parent.width
       height: Math.max(30, parent.height - tools.height - moreButton.height
-        - emptyLabel.height - filterProgress.height - parent.spacing * 4)
+        - emptyLabel.height - filterProgress.height - selectionTools.height
+        - columnHeaders.height - parent.spacing * 6)
       model: root.visibleItems
       clip: true
       spacing: Style.space(3)
@@ -388,6 +477,17 @@ Item {
         parent: mediaList
         flickable: mediaList
         onScrolled: root.rememberView()
+      }
+
+      Keys.onPressed: function(event) {
+        if (root.enableSelection && event.key === Qt.Key_A
+            && (event.modifiers & Qt.ControlModifier)) {
+          root.selectAll()
+          event.accepted = true
+        } else if (event.key === Qt.Key_Escape && root.selectionCount > 0) {
+          root.clearSelection()
+          event.accepted = true
+        }
       }
 
       Keys.onReturnPressed: function(event) {
@@ -414,7 +514,13 @@ Item {
         foreground: Color.foreground
         accent: Color.accent
         fontFamily: Style.font.family
-        selected: ListView.isCurrentItem && root.keyboardAtList
+        selected: root.isSelected(modelData) || (ListView.isCurrentItem && root.keyboardAtList)
+        selectionEnabled: root.enableSelection && modelData.kind === "item"
+        compactRows: root.compactRows && root.trackTable
+        albumColumn: root.albumColumn
+        dateColumn: root.dateColumn
+        draggedItems: root.isSelected(modelData) ? root.selectedItems() : [modelData]
+        onSelectionRequested: function(modifiers) { root.selectRow(index, modifiers) }
         browseOnActivate: root.browseContexts && modelData.kind === "context"
         showQueue: root.showQueue
         showPlaylist: root.showPlaylist
