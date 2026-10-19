@@ -1,5 +1,27 @@
 # Implementation status
 
+## Desktop parity update, 19 October 2026
+
+The `feat/spotify-desktop-parity` branch starts from main `68c50c0`. It adds
+Back/Forward and bounded session routes, local playlist pins, a resizable sidebar,
+lazy listening panes, mixed search, compact selectable song tables, batch library
+and playlist actions, and playlist metadata editing. Native queue snapshots are
+event-driven, with visible-row metadata and a 200-entry metadata cache. Native
+queue jump/reorder/remove remain unavailable because the receiver does not expose
+safe operations for them. Spotify API restrictions still apply to remote actions.
+
+Discovery runs only while Gems is visible. Library, selected-playlist and generic
+detail buffers release surplus metadata at complete page boundaries. Existing
+per-query search results and artist catalog buffers are separate retained caches;
+the collection policy does not claim to bound them. See
+[PERFORMANCE_POLICY.md](PERFORMANCE_POLICY.md) for exact gates and fixture limits.
+No browser engine, background library index, new service or runtime dependency is
+added. Omasing, Omarchy themes and the native playback path remain in place.
+
+This update is a PR, not a deployment or versioned release. The installation and
+measurements below describe the September implementation and are historical.
+
+
 Local 1.0.4 implementation, 7 September 2026. This is an implementation and
 validation record, not a claim that the corresponding GitHub issues are closed
 or that a release has been published. The complete reviewed inventory remains
@@ -56,7 +78,7 @@ Personal-client documentation follows [quota modes](https://developer.spotify.co
   existing explicit backend error, not a promise of a Spotify-side fix.
 - #37 exact reconnect-context recovery needs the upstream snapshot contract.
   Ownership activation does not restore a lost queue or shuffle context.
-- #26 configurable columns, #59 queue launcher, #50 built-in lyrics/zoom, and
+- At the September snapshot: #26 configurable columns, #59 queue launcher, #50 built-in lyrics/zoom, and
   managed Soloist support remain separate optional work. Omasing stays the
   default. No Soloist client/key was provisioned or lossless quality claimed.
 - #13 recommendation feedback remains deferred as specified in the plan.

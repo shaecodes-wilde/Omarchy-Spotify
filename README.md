@@ -89,7 +89,7 @@ verify the new metric and choose a deeper search without clearing your feedback.
 
 The full player has Back/Forward history, a resizable library sidebar with local
 playlist pins, and optional Now playing and Queue panes. Closing a pane releases
-its view; closing the player keeps only bounded collection metadata. Hidden Gems
+its view; inactive library and playlist metadata use bounded page checkpoints. Hidden Gems
 fetches new recommendations only while its page is visible.
 
 Search starts with Songs, Artists and Albums together. Open a category to page
