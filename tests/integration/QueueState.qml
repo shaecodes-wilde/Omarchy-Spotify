@@ -21,7 +21,7 @@ ShellRoot {
     id: fakeApi
     function abortRequest(handle) {}
     function request(method, path, query, body, callback) {
-      tests.metadataCalls.push(query.ids)
+      tests.metadataCalls.push(query ? query.ids : "web-queue")
       tests.metadataReplies.push(callback)
     }
   }
@@ -45,6 +45,7 @@ ShellRoot {
     property var remoteDevice: null
     property var remotePlayback: null
     property string activeView: "home"
+    property bool uiVisible: false
   }
   Plugin.QueueController { id: metadataTest; host: metadataHost }
   Timer {
@@ -107,6 +108,12 @@ ShellRoot {
       metadataTest.setQueueVisibleItems("pane", [{type:"track",id:"another",uri:"spotify:track:another"}])
       if (tests.metadataCalls.length !== 2 || metadataTest.queue[1].kind !== "item")
         throw new Error("Restricted endpoint retried or native placeholder lost item kind")
+      metadataTest.setQueueVisibleItems("pane", [])
+      metadataHost.activeView = "queue"
+      fakeBackend.ready = false
+      metadataHost.selectedDeviceId = "changed-while-hidden"
+      if (tests.metadataCalls.length !== 2)
+        throw new Error("Hidden Web queue refreshed after playback identity changed")
       console.log("QUEUE_STATE_PASS")
       Qt.quit()
     }

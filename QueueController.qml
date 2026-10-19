@@ -69,7 +69,8 @@ Item {
     queueLoaded = false
     queueLoading = false
     queue = []
-    if (nativeQueueActive || host.activeView === "queue" || Object.keys(visibleItems).length) loadQueue()
+    if (nativeQueueActive || (host.uiVisible && host.activeView === "queue")
+        || Object.keys(visibleItems).length) loadQueue()
   }
 
   function renderNativeQueue() {
