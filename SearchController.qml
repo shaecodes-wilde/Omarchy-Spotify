@@ -18,6 +18,9 @@ Item {
   property int searchGeneration: 0
   property bool searchLoading: false
   property var pageRequest: null
+  property var overviewRequests: []
+  readonly property var overviewTypes: ["track", "artist", "album"]
+  property int overviewPending: 0
   property string retryMode: "initial"
   onDataSerialChanged: clearSearch()
 
@@ -33,6 +36,7 @@ Item {
   }
 
   function search(term, type, force) {
+    if (type === "all") { searchAll(term, force); return }
     var normalized = String(term || "").trim()
     var value = Api.normalizedSearchType(type)
     if (force !== true && searchLoading && searchQuery === normalized
@@ -94,6 +98,68 @@ Item {
     })
   }
 
+  function searchAll(term, force) {
+    var normalized = String(term || "").trim()
+    if (!normalized) { clearSearch(); return }
+    if (force !== true && searchLoading && searchQuery === normalized
+        && searchPendingType === "all") return
+    cancelSearch(false)
+    searchQuery = normalized
+    searchActiveType = "all"
+    if (searchResultQuery !== normalized) {
+      searchResultQuery = normalized
+      searchGroups = Api.searchGroups({}, 128)
+      searchLoadedTypes = ({})
+    }
+    var types = overviewTypes.filter(function(type) {
+      return force === true || root.searchLoadedTypes[type] !== true
+    })
+    if (!types.length) return
+    retryMode = "initial"
+    searchLoading = true
+    searchPendingType = "all"
+    overviewPending = types.length
+    var expected = dataSerial
+    var expectedSearch = searchGeneration
+    types.forEach(function(type) {
+      var handle = api.request("GET", "/search", { q: normalized, type: type, limit: 10 },
+        null, function(status, payload, error) {
+          if (expected !== root.dataSerial || expectedSearch !== root.searchGeneration) return
+          if (error) root.searchError = root.safeError(error)
+          else {
+            var incoming = ({})
+            incoming[type] = Api.normalizeSearchPage(payload, type, 128)
+            root.searchGroups = Api.mergeSearchGroups(root.searchGroups, incoming)
+            var loaded = Api.shallowCopy(root.searchLoadedTypes)
+            loaded[type] = true
+            root.searchLoadedTypes = loaded
+            root.checkSavedItems(incoming[type].items)
+          }
+          root.overviewPending--
+          if (root.overviewPending === 0) {
+            var loadedOverview = Api.shallowCopy(root.searchLoadedTypes)
+            loadedOverview.all = root.overviewTypes.every(function(value) {
+              return loadedOverview[value] === true
+            })
+            root.searchLoadedTypes = loadedOverview
+            root.searchLoading = false
+            root.searchPendingType = ""
+            root.overviewRequests = []
+            root.rememberSearch(normalized)
+          }
+        }, { priority: "interactive", timeoutMs: Api.SEARCH_REQUEST_TIMEOUT_MS,
+          retryRateLimit: false })
+      // A token error can complete synchronously before request() returns.
+      if (root.overviewPending > 0) root.overviewRequests = root.overviewRequests.concat([handle])
+    })
+  }
+
+  function cancelOverview() {
+    overviewRequests.forEach(function(handle) { api.abortRequest(handle) })
+    overviewRequests = []
+    overviewPending = 0
+  }
+
   function searchItems(type) {
     var page = searchGroups[String(type || "track")]
     return page && Array.isArray(page.items) ? page.items : []
@@ -137,6 +203,7 @@ Item {
   }
 
   function retrySearch(type) {
+    if (type === "all") { searchAll(searchQuery, false); return }
     var value = Api.normalizedSearchType(type)
     if (!searchQuery) return
     if (retryMode === "page" && searchNext(value) !== "")
@@ -146,6 +213,7 @@ Item {
 
   function clearSearch() {
     searchGeneration++
+    cancelOverview()
     api.cancelSearch()
     api.abortRequest(pageRequest)
     pageRequest = null
@@ -161,6 +229,7 @@ Item {
 
   function cancelSearch(clearResults) {
     searchGeneration++
+    cancelOverview()
     api.cancelSearch()
     api.abortRequest(pageRequest)
     pageRequest = null
