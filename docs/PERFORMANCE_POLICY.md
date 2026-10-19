@@ -108,6 +108,15 @@ library or restores the fixture records once if the candidate trimmed it. It doe
 not reset a still-complete library or rebuild its prefix on every return. This fixture-owned data is confined to navigation; closed-after-use
 keeps no such root references, so its retention comparison can release records.
 
+For mini sampling, the private copy of Omarchy's KeyboardPanel is input-transparent
+and unfocusable, with the other-output dismissal surfaces disabled. This keeps
+ordinary desktop input from dismissing the fixture and avoids intercepting the
+user's clicks/keys. The unused anchor window stays hidden. The actual BarWidget
+content still renders in a native Wayland layer-shell window; source BarWidget
+and installed Omarchy files are unchanged. This comparison excludes popup input
+focus/dismissal behavior as well as physical input/compositor latency. The harness
+fails if the copied KeyboardPanel structure no longer matches its isolation steps.
+
 Mini-player content uses a real Wayland layer-shell window, which Qt's offscreen
 backend does not provide. The offscreen report explicitly marks it skipped and
 returns `partial` even if all available gates pass. Run the mini case separately

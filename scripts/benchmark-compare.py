@@ -53,6 +53,22 @@ def run_case(tree, mode, count, args, output, name):
             panel_path.write_text(panel_source)
         for directory in ('Commons', 'Ui'):
             shutil.copytree(Path('/usr/share/omarchy/shell') / directory, app / directory)
+        if mode == 'mini' and args.platform == 'wayland':
+            # Sample a steady visible popup without intercepting the user's desktop input.
+            keyboard_panel = app / 'Ui/KeyboardPanel.qml'
+            content = keyboard_panel.read_text()
+            replacements = {
+                'WlrLayershell.keyboardFocus: open\n    ? (focusPrimed ? WlrKeyboardFocus.OnDemand : WlrKeyboardFocus.Exclusive)\n    : WlrKeyboardFocus.None':
+                    'WlrLayershell.keyboardFocus: WlrKeyboardFocus.None',
+                'mask: Region {\n    width: root.screenW\n    height: root.screenH\n  }':
+                    'mask: Region { width: 0; height: 0 }',
+                'model: root.open ? Quickshell.screens : []': 'model: []',
+            }
+            for original, replacement in replacements.items():
+                if content.count(original) != 1:
+                    raise RuntimeError('cannot isolate mini-player input: copied KeyboardPanel changed')
+                content = content.replace(original, replacement, 1)
+            keyboard_panel.write_text(content)
         shutil.copy2(HERE.parent / 'tests/integration/PerformanceFixture.qml', app / 'shell.qml')
         shutil.copy2(HERE.parent / 'tests/integration/PerformanceMini.qml', app / 'mini.qml')
         # All application state and credentials are isolated; system session MPRIS is hidden.
@@ -155,10 +171,12 @@ def main():
     report = dict(status='running', measurement_profile='release-parameters' if args.seconds >= 10 and args.samples >= 3 and args.settle >= 20 else 'screening',
                   seconds=args.seconds, samples=args.samples, settle_seconds=args.settle,
                   platform=args.platform, metadata_only=True, artwork=False, live_account=False,
+                  wayland_input_isolation=args.platform == 'wayland' and 'mini' in args.modes,
                   baseline=str(args.baseline.resolve()), candidate=str(args.candidate.resolve()),
                   limitations=['Offscreen measures native item creation and local event feedback, not compositor input-to-photon latency.',
                                'Fixture metadata has no artwork; use live benchmark.sh for actual artwork/playback costs.',
-                               'Keyring, systemctl and playback setup commands are stubbed; runtime and DBus session are isolated.'], cases={}, skipped=[])
+                               'Keyring, systemctl and playback setup commands are stubbed; runtime and DBus session are isolated.',
+                               'Wayland mini uses an input-transparent, unfocusable private KeyboardPanel copy without dismissal surfaces; physical input behavior is not measured.'], cases={}, skipped=[])
     (args.output / 'report.json').write_text(json.dumps(report, indent=2)+'\n')
     failed = False
     for mode in args.modes:

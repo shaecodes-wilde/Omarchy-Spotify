@@ -148,7 +148,7 @@ ShellRoot {
         panel.currentTab = "library"
         panel.opened = true
       }
-      window.visible = root.mode !== "closed"
+      window.visible = root.mode !== "closed" && root.mode !== "mini"
       // Allow the real page Loader and ListView to finish before asserting their state.
       verifyReady.deadlineAt = Date.now() + 15000
       verifyReady.start()
