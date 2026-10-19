@@ -2958,9 +2958,11 @@ Item {
     var body = pendingPlaybackBody
     var successMessage = pendingPlaybackMessage
     var radioPlaylist = pendingPlaybackRadio
+    var account = dataSerial
     clearPendingPlayback()
     localSocketWaitTimer.stop()
     backendClient.loadPlayback(body, function(ok, result, error, outcomeUnknown) {
+      if (account !== root.dataSerial || playbackSerial !== root.radioSerial) return
       if (ok) {
         if (playbackSerial === root.radioSerial)
           root.radioContextSelected = !!radioPlaylist

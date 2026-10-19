@@ -55,6 +55,23 @@ rg -q QUEUE_STATE_PASS "$test_root/queue-output" || {
 }
 echo 'Quickshell queue state integration passed.'
 
+mkdir -p "$test_root/app/plugin/real"
+cp "$source_root/"{BackendClient.qml,Api.js} "$test_root/app/plugin/real/"
+cp "$source_root/tests/integration/PlaybackBackend.qml" "$test_root/app/plugin/BackendClient.qml"
+cp "$source_root/tests/integration/PlaybackLifetime.qml" "$test_root/app/shell.qml"
+env -u WAYLAND_DISPLAY QT_QPA_PLATFORM=offscreen QT_QPA_PLATFORMTHEME=generic NO_AT_BRIDGE=1 XDG_STATE_HOME="$test_root/state" \
+  timeout 15s dbus-run-session -- qs --no-color -p "$test_root/app" > "$test_root/playback-output" 2>&1 || {
+  cat "$test_root/playback-output"
+  exit 1
+}
+rg -q PLAYBACK_LIFETIME_PASS "$test_root/playback-output" || {
+  cat "$test_root/playback-output"
+  exit 1
+}
+cp "$source_root/BackendClient.qml" "$test_root/app/plugin/BackendClient.qml"
+echo 'Quickshell playback lifetime integration passed.'
+
+
 
 cp "$source_root/tests/integration/DiscoveryPipeline.qml" "$test_root/app/shell.qml"
 env -u WAYLAND_DISPLAY QT_QPA_PLATFORM=offscreen QT_QPA_PLATFORMTHEME=generic NO_AT_BRIDGE=1 XDG_STATE_HOME="$test_root/state" \
