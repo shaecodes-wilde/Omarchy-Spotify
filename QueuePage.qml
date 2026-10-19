@@ -19,10 +19,20 @@ Item {
       panel.service.setQueueVisibleItems(queueSurface, [])
       return
     }
-    var first = queueList.indexAt(Math.max(1, queueList.width / 2), queueList.contentY + 1)
-    if (first < 0) first = 0
-    var last = queueList.indexAt(Math.max(1, queueList.width / 2), queueList.contentY + queueList.height - 1)
-    if (last < first) last = Math.min(queueList.count - 1, first + 19)
+    var x = Math.max(1, queueList.width / 2)
+    var gap = queueList.spacing + 1
+    var top = queueList.contentY + 1
+    var first = queueList.indexAt(x, top)
+    if (first < 0) first = queueList.indexAt(x, top + gap)
+    if (first < 0) {
+      panel.service.setQueueVisibleItems(queueSurface, [])
+      return
+    }
+    var bottom = Math.min(queueList.contentY + queueList.height - 1,
+      queueList.originY + queueList.contentHeight - 1)
+    var last = queueList.indexAt(x, bottom)
+    if (last < first) last = queueList.indexAt(x, bottom - gap)
+    if (last < first) last = first
     panel.service.setQueueVisibleItems(queueSurface, visibleItems.slice(first, Math.min(last + 1, first + 50)))
   }
   onVisibleItemsChanged: Qt.callLater(updateVisibleMetadata)
@@ -65,7 +75,6 @@ Item {
           width: parent.width
           text: panel.service ? panel.service.queueUnavailableReason : ""
           visible: text !== ""
-          height: visible ? implicitHeight : 0
           color: panel.muted
           font.family: panel.fontFamily
           font.pixelSize: Style.font.caption
@@ -76,7 +85,7 @@ Item {
           id: queueList
           objectName: queueRoot.drawer ? "queue-drawer-list" : "page-list"
           width: parent.width
-          height: Math.max(60, parent.height - queueExplanation.height - Style.space(52))
+          height: Math.max(60, parent.height - (queueExplanation.visible ? queueExplanation.implicitHeight : 0) - Style.space(52))
           model: queueRoot.visibleItems
           clip: true
           spacing: Style.space(3)
