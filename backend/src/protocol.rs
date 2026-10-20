@@ -98,6 +98,22 @@ pub struct Track {
     pub item_type: String,
 }
 
+#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
+pub struct QueueEntry {
+    pub uri: String,
+    pub provider: String,
+}
+
+#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
+pub struct QueueSnapshot {
+    pub context_uri: String,
+    pub current_track: Option<QueueEntry>,
+    pub next_tracks: Vec<QueueEntry>,
+    pub prev_tracks: Vec<QueueEntry>,
+    pub next_total: usize,
+    pub truncated: bool,
+}
+
 #[derive(Clone, Debug, Serialize, PartialEq)]
 pub struct BackendState {
     pub protocol_version: u16,
@@ -119,6 +135,11 @@ pub struct BackendState {
     pub error: String,
     #[serde(skip)]
     pub seek_sequence: u64,
+    // Queue changes have a separate event; position ticks never serialize it.
+    #[serde(skip)]
+    pub queue: Option<QueueSnapshot>,
+    #[serde(skip)]
+    pub queue_revision: u64,
 }
 
 impl Default for BackendState {
@@ -141,6 +162,8 @@ impl Default for BackendState {
             error_code: String::new(),
             error: String::new(),
             seek_sequence: 0,
+            queue: None,
+            queue_revision: 0,
         }
     }
 }
@@ -171,6 +194,12 @@ pub enum ServerMessage<'a> {
         result: Option<serde_json::Value>,
         #[serde(skip_serializing_if = "Option::is_none")]
         error: Option<ProtocolError>,
+    },
+    #[serde(rename = "event")]
+    QueueChanged {
+        v: u16,
+        event: &'a str,
+        queue: &'a Option<QueueSnapshot>,
     },
     Event {
         v: u16,
@@ -239,6 +268,23 @@ mod tests {
         assert_eq!(value["state"]["engine"], "librespot");
         assert!(value["state"].get("error_code").is_none());
         assert!(value["state"].get("seek_sequence").is_none());
+    }
+
+    #[test]
+    fn queue_has_a_separate_optional_event() {
+        let state = BackendState::default();
+        let value = serde_json::to_value(ServerMessage::QueueChanged {
+            v: PROTOCOL_VERSION,
+            event: "queue_changed",
+            queue: &state.queue,
+        })
+        .unwrap();
+        assert_eq!(value["type"], "event");
+        assert_eq!(value["event"], "queue_changed");
+        assert!(value["queue"].is_null());
+        let state_value = serde_json::to_value(state).unwrap();
+        assert!(state_value.get("queue").is_none());
+        assert!(state_value.get("queue_revision").is_none());
     }
 
     #[test]

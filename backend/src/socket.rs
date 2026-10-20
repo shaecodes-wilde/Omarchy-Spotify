@@ -86,6 +86,17 @@ async fn client_loop(stream: UnixStream, state: StateStore, commands: EngineSend
         })
     })?;
     write_encoded(&mut writer, &initial).await?;
+    let (mut queue_revision, queue) = state.with(|snapshot| {
+        (
+            snapshot.queue_revision,
+            encode_message(&ServerMessage::QueueChanged {
+                v: PROTOCOL_VERSION,
+                event: "queue_changed",
+                queue: &snapshot.queue,
+            }),
+        )
+    });
+    write_encoded(&mut writer, &queue?).await?;
 
     loop {
         tokio::select! {
@@ -96,15 +107,23 @@ async fn client_loop(stream: UnixStream, state: StateStore, commands: EngineSend
             }
             changed = states.changed() => {
                 if changed.is_err() { break; }
-                let encoded = {
+                let (encoded, queue) = {
                     let snapshot = states.borrow_and_update();
-                    encode_message(&ServerMessage::Event {
+                    let queue = if snapshot.queue_revision != queue_revision {
+                        queue_revision = snapshot.queue_revision;
+                        Some(encode_message(&ServerMessage::QueueChanged {
+                            v: PROTOCOL_VERSION, event: "queue_changed", queue: &snapshot.queue,
+                        })?)
+                    } else { None };
+                    let encoded = encode_message(&ServerMessage::Event {
                         v: PROTOCOL_VERSION,
                         event: "state_changed",
                         state: &snapshot,
-                    })?
+                    })?;
+                    (encoded, queue)
                 };
                 write_encoded(&mut writer, &encoded).await?;
+                if let Some(queue) = queue { write_encoded(&mut writer, &queue).await?; }
             }
         }
     }
@@ -142,7 +161,8 @@ async fn handle_line<'a>(
         crate::protocol::Command::Hello => Ok(serde_json::json!({
             "protocol_version": PROTOCOL_VERSION,
             "backend_version": env!("CARGO_PKG_VERSION"),
-            "engine": "librespot"
+            "engine": "librespot",
+            "capabilities": { "queue_snapshot": true, "queue_activate": false, "queue_edit": false }
         })),
         crate::protocol::Command::Ping => Ok(serde_json::json!({ "pong": true })),
         crate::protocol::Command::GetState => state
@@ -180,4 +200,71 @@ async fn write_encoded(
         .await
         .context("failed to write backend message")?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::protocol::{BackendState, QueueSnapshot};
+    use std::time::Duration;
+
+    #[tokio::test]
+    async fn position_ticks_do_not_repeat_queue_payloads() {
+        let state = StateStore::new(BackendState::default());
+        let (commands, _receiver) = tokio::sync::mpsc::channel(1);
+        let (client, server) = UnixStream::pair().unwrap();
+        let task = tokio::spawn(client_loop(server, state.clone(), commands));
+        let mut lines = BufReader::new(client).lines();
+        let initial = lines.next_line().await.unwrap().unwrap();
+        assert!(!initial.contains("next_tracks"));
+        assert!(
+            lines
+                .next_line()
+                .await
+                .unwrap()
+                .unwrap()
+                .contains("queue_changed")
+        );
+        state.update(|snapshot| {
+            snapshot.queue = Some(QueueSnapshot {
+                context_uri: "spotify:playlist:context".into(),
+                current_track: None,
+                next_tracks: vec![],
+                prev_tracks: vec![],
+                next_total: 0,
+                truncated: false,
+            });
+            snapshot.queue_revision += 1;
+            true
+        });
+        assert!(
+            lines
+                .next_line()
+                .await
+                .unwrap()
+                .unwrap()
+                .contains("state_changed")
+        );
+        assert!(
+            lines
+                .next_line()
+                .await
+                .unwrap()
+                .unwrap()
+                .contains("queue_changed")
+        );
+        state.update(|snapshot| {
+            snapshot.position_ms = 1000;
+            true
+        });
+        let tick = lines.next_line().await.unwrap().unwrap();
+        assert!(tick.contains("state_changed"));
+        assert!(!tick.contains("next_tracks"));
+        assert!(
+            tokio::time::timeout(Duration::from_millis(30), lines.next_line())
+                .await
+                .is_err()
+        );
+        task.abort();
+    }
 }

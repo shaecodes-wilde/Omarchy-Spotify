@@ -5,6 +5,9 @@ Item {
   id: root
   required property var api
   property int dataSerial: 0
+  property bool active: true
+  property var restoreTarget: null
+  onActiveChanged: if (!active) cancelSearch(false)
   signal rememberSearch(string term)
   signal checkSavedItems(var items)
   function safeError(error) { return Api.redact(error) }
@@ -18,6 +21,9 @@ Item {
   property int searchGeneration: 0
   property bool searchLoading: false
   property var pageRequest: null
+  property var overviewRequests: []
+  readonly property var overviewTypes: ["track", "artist", "album"]
+  property int overviewPending: 0
   property string retryMode: "initial"
   onDataSerialChanged: clearSearch()
 
@@ -33,6 +39,7 @@ Item {
   }
 
   function search(term, type, force) {
+    if (type === "all") { searchAll(term, force); return }
     var normalized = String(term || "").trim()
     var value = Api.normalizedSearchType(type)
     if (force !== true && searchLoading && searchQuery === normalized
@@ -57,6 +64,7 @@ Item {
       searchGroups = refreshedGroups
       var refreshedTypes = Api.shallowCopy(searchLoadedTypes)
       refreshedTypes[value] = false
+      refreshedTypes.all = false
       searchLoadedTypes = refreshedTypes
     }
     if (searchLoadedTypes[value] === true) {
@@ -79,7 +87,7 @@ Item {
       if (root.searchQuery !== normalized) return
       root.searchLoading = false
       root.searchPendingType = ""
-      if (error) root.searchError = root.safeError(error)
+      if (error) { root.searchError = root.safeError(error); root.restoreTarget = null }
       else {
         var incoming = ({})
         incoming[value] = groups[value]
@@ -90,8 +98,80 @@ Item {
         root.searchError = ""
         root.rememberSearch(normalized)
         root.checkSavedItems(root.searchItems(value))
+        root.continueRestore()
       }
     })
+  }
+
+  function searchAll(term, force) {
+    var normalized = String(term || "").trim()
+    if (!normalized) { clearSearch(); return }
+    if (force !== true && searchLoading && searchQuery === normalized
+        && searchPendingType === "all") return
+    cancelSearch(false)
+    searchQuery = normalized
+    searchActiveType = "all"
+    if (searchResultQuery !== normalized) {
+      searchResultQuery = normalized
+      searchGroups = Api.searchGroups({}, 128)
+      searchLoadedTypes = ({})
+    }
+    var types = overviewTypes.filter(function(type) {
+      return force === true || root.searchLoadedTypes[type] !== true
+    })
+    if (!types.length) return
+    if (force === true) {
+      var cleared = Api.shallowCopy(searchGroups)
+      types.forEach(function(type) { cleared[type] = Api.normalizeSearchPage({}, type, 128) })
+      searchGroups = cleared
+      var pendingTypes = Api.shallowCopy(searchLoadedTypes)
+      pendingTypes.all = false
+      types.forEach(function(type) { pendingTypes[type] = false })
+      searchLoadedTypes = pendingTypes
+    }
+    retryMode = "initial"
+    searchLoading = true
+    searchPendingType = "all"
+    overviewPending = types.length
+    var expected = dataSerial
+    var expectedSearch = searchGeneration
+    types.forEach(function(type) {
+      var handle = api.request("GET", "/search", { q: normalized, type: type, limit: 10 },
+        null, function(status, payload, error) {
+          if (expected !== root.dataSerial || expectedSearch !== root.searchGeneration) return
+          if (error) root.searchError = root.safeError(error)
+          else {
+            var incoming = ({})
+            incoming[type] = Api.normalizeSearchPage(payload, type, 128)
+            root.searchGroups = Api.mergeSearchGroups(root.searchGroups, incoming)
+            var loaded = Api.shallowCopy(root.searchLoadedTypes)
+            loaded[type] = true
+            root.searchLoadedTypes = loaded
+            root.checkSavedItems(incoming[type].items)
+          }
+          root.overviewPending--
+          if (root.overviewPending === 0) {
+            var loadedOverview = Api.shallowCopy(root.searchLoadedTypes)
+            loadedOverview.all = root.overviewTypes.every(function(value) {
+              return loadedOverview[value] === true
+            })
+            root.searchLoadedTypes = loadedOverview
+            root.searchLoading = false
+            root.searchPendingType = ""
+            root.overviewRequests = []
+            root.rememberSearch(normalized)
+          }
+        }, { priority: "interactive", timeoutMs: Api.SEARCH_REQUEST_TIMEOUT_MS,
+          retryRateLimit: false })
+      // A token error can complete synchronously before request() returns.
+      if (root.overviewPending > 0) root.overviewRequests = root.overviewRequests.concat([handle])
+    })
+  }
+
+  function cancelOverview() {
+    overviewRequests.forEach(function(handle) { api.abortRequest(handle) })
+    overviewRequests = []
+    overviewPending = 0
   }
 
   function searchItems(type) {
@@ -122,13 +202,14 @@ Item {
       root.pageRequest = null
       root.searchLoading = false
       root.searchPendingType = ""
-      if (error) { root.searchError = root.safeError(error); return }
+      if (error) { root.searchError = root.safeError(error); root.restoreTarget = null; return }
       var incoming = ({})
       incoming[value] = Api.normalizeSearchPage(payload, value, 128)
       var merged = Api.mergeSearchGroups(root.searchGroups, incoming)
       root.searchGroups = merged
       root.searchError = ""
-      root.checkSavedItems(root.searchItems(value))
+      root.checkSavedItems(incoming[value].items)
+      root.continueRestore()
     }, {
       priority: "interactive",
       timeoutMs: Api.SEARCH_REQUEST_TIMEOUT_MS,
@@ -136,7 +217,33 @@ Item {
     })
   }
 
+  function ensureItemCount(query, type, count) {
+    var target = Math.min(10000, Math.max(0, Math.floor(Number(count) || 0)))
+    if (!active || type === "all" || searchQuery !== query || searchActiveType !== type
+        || target <= searchItems(type).length || (!searchLoading && searchError)) return false
+    restoreTarget = { query: query, type: type, count: target }
+    continueRestore()
+    return restorePending(query, type)
+  }
+
+  function restorePending(query, type) {
+    return !!restoreTarget && restoreTarget.query === query && restoreTarget.type === type
+      && searchItems(type).length < restoreTarget.count
+  }
+
+  function continueRestore() {
+    var target = restoreTarget
+    if (!target || searchLoading) return
+    if (!active || target.query !== searchQuery || target.type !== searchActiveType
+        || searchItems(target.type).length >= target.count || !searchNext(target.type)) {
+      restoreTarget = null
+      return
+    }
+    loadMoreSearch(target.type)
+  }
+
   function retrySearch(type) {
+    if (type === "all") { searchAll(searchQuery, false); return }
     var value = Api.normalizedSearchType(type)
     if (!searchQuery) return
     if (retryMode === "page" && searchNext(value) !== "")
@@ -145,7 +252,9 @@ Item {
   }
 
   function clearSearch() {
+    restoreTarget = null
     searchGeneration++
+    cancelOverview()
     api.cancelSearch()
     api.abortRequest(pageRequest)
     pageRequest = null
@@ -160,7 +269,9 @@ Item {
   }
 
   function cancelSearch(clearResults) {
+    restoreTarget = null
     searchGeneration++
+    cancelOverview()
     api.cancelSearch()
     api.abortRequest(pageRequest)
     pageRequest = null

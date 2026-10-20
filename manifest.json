@@ -49,7 +49,9 @@
       "lastFmUsername": "",
       "lastFmApiKey": "",
       "discoveryObscurity": "Obscure",
-      "discoveryAdventure": "Balanced"
+      "discoveryAdventure": "Balanced",
+      "trackDensity": "Compact",
+      "trackColumns": "Album + date"
     },
     "schema": [
       {
@@ -259,6 +261,28 @@
           "Balanced",
           "Adventurous"
         ]
+      },
+      {
+        "key": "trackDensity",
+        "type": "enum",
+        "label": "Track row density",
+        "defaultValue": "Compact",
+        "options": [
+          "Compact",
+          "Comfortable"
+        ]
+      },
+      {
+        "key": "trackColumns",
+        "type": "enum",
+        "label": "Track columns",
+        "defaultValue": "Album + date",
+        "options": [
+          "Album + date",
+          "Album",
+          "Title only"
+        ],
+        "description": "Extra columns appear when the player has enough width."
       }
     ]
   }

@@ -5,6 +5,7 @@ import qs.Commons
 import qs.Ui
 
 import "Api.js" as Api
+import "Navigation.js" as Navigation
 
 Item {
   id: root
@@ -18,6 +19,8 @@ Item {
   property real volumeBeforeMute: 0.5
   property double lastVolumeAdjustAt: 0
   property string currentTab: "home"
+  readonly property bool pageReady: pageLoader.status === Loader.Ready && pageLoader.item !== null
+    && pageLoader.sourceComponent === root.pageComponent()
   property bool openedForLogin: false
 
   property double searchClock: Date.now()
@@ -31,9 +34,9 @@ Item {
     onTriggered: root.searchClock = Date.now()
   }
   property string searchText: ""
-  property string searchType: "track"
+  property string searchType: "all"
   property string libraryType: "tracks"
-  property string homeType: "gems"
+  property string homeType: "overview"
   property string libraryFilter: ""
   property string librarySort: "default"
   property string playlistFilter: ""
@@ -50,11 +53,23 @@ Item {
   property var scrollPositionOrder: []
   readonly property int scrollPositionLimit: 128
   property var navigationStack: []
+  property var registeredCollections: []
+  property var forwardStack: []
+  property real sidebarWidth: 214
+  property bool sidebarCollapsed: false
+  property var playlistPins: []
+  property string rightPane: ""
+  property int pendingFocusIndex: -1
+  property int focusRestoreAttempts: 0
+  readonly property int sidebarPlaylistCursorIndex: sidebar.playlistList.currentIndex
+  readonly property bool searchFieldFocused: unifiedSearchField.activeFocus
   property string lastContentTab: "home"
   property string restoredPlaylistId: ""
   property var restoredPlaylist: null
   property int restoredPlaylistItemCount: 0
   property int restoredDetailItemCount: 0
+  property int restoredLibraryItemCount: 0
+  property int restoredSearchItemCount: 0
   readonly property bool artworkVisible: !service || service.artworkEnabled
 
   property string draftLastFmUsername: ""
@@ -91,6 +106,7 @@ Item {
   property string contextSourceUri: ""
   property string contextPlaybackUri: ""
   property int contextSourceIndex: -1
+  property bool contextIsQueue: false
   property var contextPlaylist: null
   property var pendingPlaylistItem: null
   property string newPlaylistName: ""
@@ -126,6 +142,7 @@ Item {
     && service && service.detailItem && service.detailItem.type === "artist"
     && artistSearchText.trim() !== ""
   readonly property bool shortcutsBlocked: mediaContextMenu.opened
+    || playlistEditor.opened
     || playlistPicker.opened || createPlaylistPopup.opened || sleepPopup.opened
     || shortcutHelpPopup.opened || lyricsInstallPopup.opened
   readonly property bool shortcutHintsEnabled: service
@@ -145,29 +162,7 @@ Item {
   readonly property bool panelCursorVisible: panelCursorActive && !typingInField
     && (!shortcutsBlocked || popupCursorOpen)
 
-  component KeyHint: ShortcutHint {
-    property string region: ""
-    property string action: ""
-    ctrlHeld: root.hintCtrlHeld
-    shiftHeld: root.hintShiftHeld
-    altHeld: root.hintAltHeld
-    active: root.shortcutHintsActive
-    navHint: {
-      root.panelCursorAction
-      root.panelCursorRegion
-      root.panelCursorVisible
-      root.panelCursorActive
-      root.shortcutModeLatched
-      root.hintCtrlHeld
-      root.hintShiftHeld
-      root.hintAltHeld
-      playlistShortcuts.currentIndex
-      unifiedSearchField.activeFocus
-      return region && action ? root.navHintFor(region, action) : ""
-    }
-    foreground: root.foreground
-    accent: root.accent
-  }
+  component KeyHint: DesktopKeyHint { controller: root }
   component ContextMenuButton: Button {
     id: ctxBtn
     property string contextAction: ""
@@ -345,6 +340,7 @@ Item {
     contextPlaybackUri = playbackContextUri === undefined
       ? contextSourceUri : String(playbackContextUri || "")
     contextSourceIndex = index === undefined ? -1 : Math.floor(Number(index))
+    contextIsQueue = currentTab === "queue"
     contextPlaylist = playlistForContext(contextSourceUri)
     mediaContextMenu.x = Math.max(Style.space(6), Math.min(
       window.width - mediaContextMenu.width - Style.space(6), Number(sceneX) || 0))
@@ -353,7 +349,19 @@ Item {
     mediaContextMenu.open()
   }
 
+  function releaseClosedContext() {
+    if (mediaContextMenu.opened) return
+    contextItem = null
+    contextSourceItems = []
+    contextSourceUri = ""
+    contextPlaybackUri = ""
+    contextSourceIndex = -1
+    contextIsQueue = false
+    contextPlaylist = null
+  }
+
   function dismissTransientPopup() {
+    if (playlistEditor.opened) { playlistEditor.close(); return true }
     if (lyricsInstallPopup.opened && (!service || !service.lyricsPluginBusy)) {
       lyricsInstallPopup.close()
       return true
@@ -417,8 +425,7 @@ Item {
     if (!service || !playlist) return
     service.makePlaylistYourOwn(playlist, function(copy) {
       if (!copy) return
-      root.chooseTab("playlists")
-      root.service.openPlaylist(copy)
+      root.openPlaylist(copy)
     })
   }
 
@@ -463,84 +470,128 @@ Item {
     scrollPositionOrder = order
   }
 
-  function restoreUiState(restoreDetail) {
-    if (!service) return
-    var state = service.sessionState || ({})
-    service.restoreLastRadioPlaylist(state.lastRadioPlaylist)
-    searchText = String(state.searchText || service.searchQuery || "")
-    searchType = Api.SEARCH_TYPES.indexOf(String(state.searchType || "")) >= 0
-      ? String(state.searchType) : "track"
-    libraryType = ["tracks", "albums", "artists", "shows", "episodes", "audiobooks"]
-      .indexOf(String(state.libraryType || "")) >= 0 ? String(state.libraryType) : "tracks"
-    homeType = ["gems", "recent", "tracks", "artists", "albums"].indexOf(String(state.homeType || "")) >= 0
-      ? String(state.homeType) : "gems"
-    libraryFilter = String(state.libraryFilter || "")
-    librarySort = String(state.librarySort || "default")
-    playlistFilter = String(state.playlistFilter || "")
-    playlistSort = String(state.playlistSort || "default")
-    detailFilter = String(state.detailFilter || "")
-    detailSort = String(state.detailSort || "default")
-    homeFilter = String(state.homeFilter || "")
-    discoverFilter = String(state.discoverFilter || "")
-    queueFilter = String(state.queueFilter || "")
-    artistSearchText = String(state.artistSearchText || "")
-    searchInContext = true
-    universalSearchActive = false
-    restoreScrollPositions(state.scrollPositions)
-    restoredPlaylist = state.selectedPlaylist && state.selectedPlaylist.id
-      && state.selectedPlaylist.type === "playlist" ? state.selectedPlaylist : null
-    restoredPlaylistId = String(state.selectedPlaylistId
-      || (restoredPlaylist ? restoredPlaylist.id : ""))
-    restoredPlaylistItemCount = Api.normalizedPlaylistRestoreCount(
-      state.selectedPlaylistItemCount)
-    restoredDetailItemCount = Api.normalizedPlaylistRestoreCount(
-      state.detailItemCount)
-    var restoredTab = String(state.tab || "home")
-    if (["home", "discover", "search", "library", "playlists", "detail", "queue", "devices", "setup"]
-        .indexOf(restoredTab) >= 0) currentTab = restoredTab
-    if (restoreDetail !== false && currentTab === "detail" && state.detailItem) {
-      var sameDetail = service.detailItem
-        && String(service.detailItem.id) === String(state.detailItem.id)
-        && String(service.detailItem.type) === String(state.detailItem.type)
-      if (sameDetail) service.ensureDetailItemCount(restoredDetailItemCount)
-      else service.openDetail(state.detailItem, artistSearchText,
-        restoredDetailItemCount)
+  function captureRoute() {
+    var selected = service ? service.selectedPlaylist || restoredPlaylist : restoredPlaylist
+    var collection = collectionForListAction(panelCursorAction) || pageCollection()
+    var list = pageListView()
+    var routeScroll = ({})
+    var collections = pageCollections()
+    for (var i = 0; i < collections.length; i++) {
+      var key = collections[i].stateKey
+      if (key) routeScroll[key] = scrollFor(key)
+    }
+    if (currentTab === "queue") routeScroll.queue = scrollFor("queue")
+    return Navigation.snapshot({
+      tab: currentTab, searchText: searchText, searchType: searchType,
+      libraryType: libraryType, homeType: homeType,
+      libraryFilter: libraryFilter, librarySort: librarySort,
+      playlistFilter: playlistFilter, playlistSort: playlistSort,
+      detailFilter: detailFilter, detailSort: detailSort,
+      homeFilter: homeFilter, discoverFilter: discoverFilter, queueFilter: queueFilter,
+      artistSearchText: artistSearchText,
+      universalSearchActive: universalSearchActive, searchInContext: searchInContext,
+      detailItem: currentTab === "detail" && service ? service.detailItem : null,
+      detailItemCount: service ? service.detailRememberedItemCount : restoredDetailItemCount,
+      libraryItemCount: service ? Math.max(restoredLibraryItemCount, service.libraryItems(libraryType).length) : restoredLibraryItemCount,
+      searchItemCount: searchType === "all" ? 0 : service
+        ? Math.max(restoredSearchItemCount, service.searchResultQuery === searchText.trim()
+          ? service.searchItems(searchType).length : 0) : restoredSearchItemCount,
+      selectedPlaylist: selected, selectedPlaylistId: selected ? selected.id : restoredPlaylistId,
+      selectedPlaylistItemCount: service && service.selectedPlaylist
+        ? service.playlistRememberedItemCount : restoredPlaylistItemCount,
+      scrollPositions: routeScroll, focusRegion: panelCursorRegion, focusAction: panelCursorAction,
+      focusActive: panelCursorActive,
+      focusIndex: collection ? collection.listCurrentIndex : list ? list.currentIndex : -1
+    })
+  }
+
+  function restoreRouteFocus() {
+    if (pendingFocusIndex < 0) return
+    var collection = collectionForListAction(panelCursorAction) || pageCollection()
+    if (collection && collection.restoreReady === false) return
+    if (collection && collection.listCount > pendingFocusIndex && collection.restoreCurrentIndex) {
+      collection.restoreCurrentIndex(pendingFocusIndex)
+      pendingFocusIndex = -1
+    } else {
+      var list = pageListView()
+      if (list && list.count > pendingFocusIndex) {
+        list.currentIndex = pendingFocusIndex
+        pendingFocusIndex = -1
+      }
+    }
+  }
+
+  function applyRoute(value, restoreDetail) {
+    var state = Navigation.snapshot(value)
+    unifiedSearchDelay.stop()
+    if (service) service.cancelSearch(false)
+    searchText = state.searchText || ""
+    searchType = ["all"].concat(Api.SEARCH_TYPES).indexOf(state.searchType) >= 0 ? state.searchType : "all"
+    libraryType = ["tracks", "albums", "artists", "shows", "episodes", "audiobooks"].indexOf(state.libraryType) >= 0 ? state.libraryType : "tracks"
+    homeType = ["overview", "gems", "recent", "tracks", "artists", "albums"].indexOf(state.homeType) >= 0 ? state.homeType : "overview"
+    libraryFilter = state.libraryFilter || ""
+    librarySort = state.librarySort || "default"
+    playlistFilter = state.playlistFilter || ""
+    playlistSort = state.playlistSort || "default"
+    detailFilter = state.detailFilter || ""
+    detailSort = state.detailSort || "default"
+    homeFilter = state.homeFilter || ""
+    discoverFilter = state.discoverFilter || ""
+    queueFilter = state.queueFilter || ""
+    artistSearchText = state.artistSearchText || ""
+    searchInContext = state.searchInContext
+    universalSearchActive = state.universalSearchActive
+    var keys = Object.keys(state.scrollPositions)
+    for (var i = 0; i < keys.length; i++) rememberScroll(keys[i], state.scrollPositions[keys[i]])
+    restoredPlaylist = state.selectedPlaylist
+    restoredPlaylistId = state.selectedPlaylistId || (restoredPlaylist ? restoredPlaylist.id : "")
+    restoredPlaylistItemCount = state.selectedPlaylistItemCount
+    restoredDetailItemCount = state.detailItemCount
+    restoredLibraryItemCount = state.libraryItemCount
+    restoredSearchItemCount = state.searchItemCount
+    panelCursorRegion = state.focusRegion || "page"
+    panelCursorAction = state.focusAction || "list"
+    panelCursorActive = state.focusActive
+    pendingFocusIndex = state.focusIndex
+    currentTab = state.tab
+    if (restoreDetail !== false && currentTab === "detail" && state.detailItem && service) {
+      var sameDetail = service.detailItem && service.detailItem.id === state.detailItem.id
+        && service.detailItem.type === state.detailItem.type
+      if (sameDetail) service.ensureDetailItemCount(state.detailItemCount)
+      else service.openDetail(state.detailItem, artistSearchText, state.detailItemCount)
     }
     syncUnifiedSearchField()
+    Qt.callLater(restoreRouteFocus)
+  }
+
+  function restoreUiState(restoreDetail) {
+    if (!service) return
+    var state = Navigation.session(service.sessionState || ({}),
+      service.sessionState.backHistory, service.sessionState.forwardHistory)
+    service.restoreLastRadioPlaylist(state.lastRadioPlaylist)
+    sidebarWidth = state.sidebarWidth
+    sidebarCollapsed = state.sidebarCollapsed
+    playlistPins = state.playlistPins
+    navigationStack = state.backHistory
+    forwardStack = state.forwardHistory
+    restoreScrollPositions(state.scrollPositions)
+    applyRoute(state, restoreDetail)
   }
 
   function persistUiState() {
     if (!service) return
-    var selected = service.selectedPlaylist || restoredPlaylist
-    var selectedItemCount = service.selectedPlaylist
-      ? service.playlistRememberedItemCount : restoredPlaylistItemCount
-    service.persistSession({
-      tab: currentTab === "login" ? "home" : currentTab,
-      searchText: searchText,
-      searchType: searchType,
-      libraryType: libraryType,
-      homeType: homeType,
-      libraryFilter: libraryFilter,
-      librarySort: librarySort,
-      playlistFilter: playlistFilter,
-      playlistSort: playlistSort,
-      detailFilter: detailFilter,
-      detailSort: detailSort,
-      homeFilter: homeFilter,
-      discoverFilter: discoverFilter,
-      queueFilter: queueFilter,
-      artistSearchText: currentTab === "detail" && service.detailItem
-        && service.detailItem.type === "artist" ? artistSearchText : "",
-      scrollPositions: scrollPositions,
-      detailItem: currentTab === "detail" && service.detailItem ? service.detailItem : null,
-      detailItemCount: currentTab === "detail" && service.detailItem
-        && service.detailItem.type === "playlist"
-        ? service.detailRememberedItemCount : 0,
-      selectedPlaylist: selected,
-      selectedPlaylistId: selected ? selected.id : restoredPlaylistId,
-      selectedPlaylistItemCount: selectedItemCount,
-      lastRadioPlaylist: service.lastRadioPlaylist
-    })
+    var state = captureRoute()
+    state.scrollPositions = scrollPositions
+    state.sidebarWidth = sidebarWidth
+    state.sidebarCollapsed = sidebarCollapsed
+    state.playlistPins = playlistPins
+    state.lastRadioPlaylist = service.lastRadioPlaylist
+    service.persistSession(Navigation.session(state, navigationStack, forwardStack))
+  }
+
+  function rememberRoute() {
+    navigationStack = Navigation.push(navigationStack, captureRoute())
+    forwardStack = []
   }
 
   function restorePlaylistSelection() {
@@ -569,18 +620,7 @@ Item {
       activateMedia(item, [item], "")
       return
     }
-    var stack = navigationStack.slice()
-    stack.push({
-      tab: currentTab,
-      item: currentTab === "detail" && service ? service.detailItem : null,
-      universalSearchActive: universalSearchActive,
-      searchInContext: searchInContext,
-      artistSearchText: currentTab === "detail" && service && service.detailItem
-        && service.detailItem.type === "artist" ? artistSearchText : "",
-      detailFilter: currentTab === "detail" && service && service.detailItem
-        && service.detailItem.type !== "artist" ? detailFilter : ""
-    })
-    navigationStack = stack
+    rememberRoute()
     unifiedSearchDelay.stop()
     searchInContext = true
     universalSearchActive = false
@@ -602,33 +642,71 @@ Item {
     service.currentContext("album", function(item) { openItem(item) })
   }
 
+  function visitRoute(destination) {
+    applyRoute(destination)
+    if (!service) return
+    if (currentTab === "search" || universalSearchActive) {
+      if (searchText.trim() === "") service.clearSearch()
+      else requestSearch(searchText, searchType)
+    } else if (currentTab !== "detail") service.openView(currentTab, false)
+    if (currentTab === "playlists" && restoredPlaylist)
+      service.openPlaylist(restoredPlaylist, restoredPlaylistItemCount)
+    ensureRouteDepth()
+  }
+
+  function ensureRouteDepth() {
+    if (!service || !opened) return
+    if (currentTab === "library") service.ensureLibraryItemCount(libraryType, restoredLibraryItemCount)
+    if (showingUniversalSearch && searchType !== "all")
+      service.ensureSearchItemCount(searchText, searchType, restoredSearchItemCount)
+  }
+
   function goBack() {
-    if (!navigationStack.length) {
-      chooseTab("home")
-      return
-    }
+    if (!navigationStack.length) { chooseTab("home"); return }
     var stack = navigationStack.slice()
     var destination = stack.pop()
+    forwardStack = Navigation.push(forwardStack, captureRoute())
     navigationStack = stack
-    unifiedSearchDelay.stop()
-    if (service) service.cancelSearch(false)
-    currentTab = destination.tab || "search"
-    universalSearchActive = destination.universalSearchActive === true
-    searchInContext = destination.searchInContext === undefined
-      ? !universalSearchActive : destination.searchInContext === true
-    if (currentTab === "detail" && destination.item && service) {
-      artistSearchText = destination.item.type === "artist"
-        ? String(destination.artistSearchText || "") : ""
-      detailFilter = destination.item.type === "artist"
-        ? "" : String(destination.detailFilter || "")
-      service.openDetail(destination.item, artistSearchText)
-    }
-    if (service && (currentTab === "search" || universalSearchActive)) {
-      if (searchText.trim() === "") service.clearSearch()
-      else service.search(searchText, searchType)
-    }
-    else if (service && currentTab !== "detail") service.openView(currentTab, false)
+    visitRoute(destination)
+  }
+
+  function goForward() {
+    if (!forwardStack.length) return
+    var stack = forwardStack.slice()
+    var destination = stack.pop()
+    navigationStack = Navigation.push(navigationStack, captureRoute())
+    forwardStack = stack
+    visitRoute(destination)
+  }
+
+  function openPlaylist(item) {
+    if (!item || !service) return
+    rememberRoute()
+    currentTab = "playlists"
+    searchInContext = true
+    universalSearchActive = false
+    service.cancelSearch(false)
+    service.openPlaylist(item)
     syncUnifiedSearchField()
+  }
+
+  function sidebarItems() {
+    return Navigation.pinnedPlaylists(service ? service.sidebarPlaylists() : [], playlistPins)
+  }
+
+  function togglePlaylistPin(item) {
+    if (!item || !item.id) return
+    var next = playlistPins.slice()
+    var index = next.indexOf(item.id)
+    if (index >= 0) next.splice(index, 1)
+    else if (next.length < 32) next.push(item.id)
+    playlistPins = next
+    persistUiState()
+  }
+
+  function toggleRightPane(name) {
+    rightPane = rightPane === name ? "" : name
+    if (rightPane === "queue" && service) service.loadQueue()
   }
 
   function activateMedia(item, sourceItems, contextUri, successMessage) {
@@ -835,8 +913,8 @@ Item {
     var listCount = 0
     if (region === "sidebar") {
       listAction = "sidebar-playlists"
-      listIndex = playlistShortcuts.currentIndex
-      listCount = playlistShortcuts.count
+      listIndex = sidebar.playlistList.currentIndex
+      listCount = sidebar.playlistList.count
     } else if (region === "page") {
       listAction = Api.isCursorListAction(panelCursorAction)
         ? panelCursorAction : ""
@@ -900,9 +978,9 @@ Item {
     var back = tabDestination(true)
     return Api.cursorListRowHint({
       rowIndex: index,
-      currentIndex: playlistShortcuts.currentIndex,
-      count: playlistShortcuts.count,
-      tabRowIndex: firstVisibleIndexOf(playlistShortcuts),
+      currentIndex: sidebar.playlistList.currentIndex,
+      count: sidebar.playlistList.count,
+      tabRowIndex: firstVisibleIndexOf(sidebar.playlistList),
       atList: panelCursorRegion === "sidebar"
         && panelCursorAction === "sidebar-playlists",
       previousIsCurrent: panelCursorRegion === "sidebar"
@@ -929,23 +1007,30 @@ Item {
     return null
   }
 
-  function findNamedItems(item, name, found) {
-    var results = found || []
-    if (!item || item.visible === false) return results
-    if (item.objectName === name) results.push(item)
-    var kids = item.children
-    if (!kids) return results
-    for (var i = 0; i < kids.length; i++)
-      findNamedItems(kids[i], name, results)
-    return results
+  function registerCollection(collection) {
+    if (!collection || registeredCollections.indexOf(collection) >= 0) return
+    registeredCollections = registeredCollections.concat([collection])
+    Qt.callLater(syncCollectionCursor)
   }
 
-  function pageCollection() {
-    return findNamedItem(pageLoader.item, "media-collection")
+  function unregisterCollection(collection) {
+    registeredCollections = registeredCollections.filter(function(value) { return value !== collection })
   }
 
   function pageCollections() {
-    return findNamedItems(pageLoader.item, "media-collection")
+    return registeredCollections.filter(function(collection) {
+      if (!collection || !collection.visible) return false
+      var item = collection
+      while (item) {
+        if (item === pageLoader.item) return true
+        item = item.parent
+      }
+      return false
+    })
+  }
+
+  function pageCollection() {
+    return pageCollections()[0] || null
   }
 
   function pageListView() {
@@ -973,7 +1058,7 @@ Item {
     actions.push("nav-library", "nav-playlists")
     if (accountConnected && service && !service.playlistActionBusy)
       actions.push("nav-create")
-    if (!compactWidth && service && service.sidebarPlaylists().length)
+    if (!compactWidth && !sidebarCollapsed && service && service.sidebarPlaylists().length)
       actions.push("sidebar-playlists")
     actions.push("nav-settings")
     return actions
@@ -982,6 +1067,9 @@ Item {
   function headerCursorActions() {
     var actions = []
     if (backButton.visible) actions.push("back")
+    if (forwardButton.visible) actions.push("forward")
+    if (sidebarToggleButton.visible) actions.push("sidebar-toggle")
+    if (nowPlayingPaneButton.visible) actions.push("now-playing-pane", "queue-pane")
     if (unifiedSearchBar.visible) {
       actions.push("search")
       if (searchScopeButton.visible) actions.push("scope")
@@ -1022,7 +1110,7 @@ Item {
   function pageCursorActions() {
     var actions = []
     if (currentTab === "home")
-      actions.push("home-gems", "home-recent", "home-tracks", "home-artists", "home-albums")
+      actions.push("home-overview", "home-gems", "home-recent", "home-tracks", "home-artists", "home-albums")
     if (currentTab === "home" && homeType === "gems")
       actions.push("gem-obscurity", "gem-adventure", "gem-refresh", "gem-settings")
     if (currentTab === "library")
@@ -1032,6 +1120,7 @@ Item {
       actions.push("playlist-play", "playlist-more")
     if (showingUniversalSearch) {
       if (service && service.searchError) actions.push("retry-search")
+      actions.push("search-all")
       for (var s = 0; s < Api.SEARCH_TYPES.length; s++)
         actions.push("search-" + Api.SEARCH_TYPES[s])
     }
@@ -1046,7 +1135,12 @@ Item {
         actions.push("detail-play")
       actions.push("detail-save", "detail-more")
     }
-    if (artistCatalog) {
+    var shelves = (currentTab === "home" && homeType === "overview")
+      || (showingUniversalSearch && searchType === "all")
+    if (shelves) {
+      var shelfCollections = pageCollections()
+      for (var c = 0; c < shelfCollections.length; c++) actions.push(shelfCollections[c].keyboardListId)
+    } else if (artistCatalog) {
       actions.push("list-albums", "list-songs")
       if (service && service.artistThisIsPlaylist) actions.push("detail-thisis")
     } else {
@@ -1119,10 +1213,10 @@ Item {
   }
 
   function moveSidebarPlaylists(delta) {
-    var count = playlistShortcuts.count
-    var next = Api.listIndexAfterMove(count, playlistShortcuts.currentIndex, delta)
+    var count = sidebar.playlistList.count
+    var next = Api.listIndexAfterMove(count, sidebar.playlistList.currentIndex, delta)
     if (next < 0) return false
-    playlistShortcuts.currentIndex = next
+    sidebar.playlistList.currentIndex = next
     return true
   }
 
@@ -1138,9 +1232,9 @@ Item {
   }
 
   function enterListAction(action, delta) {
-    if (action === "sidebar-playlists" && playlistShortcuts.count > 0) {
-      playlistShortcuts.currentIndex = delta < 0
-        ? playlistShortcuts.count - 1 : 0
+    if (action === "sidebar-playlists" && sidebar.playlistList.count > 0) {
+      sidebar.playlistList.currentIndex = delta < 0
+        ? sidebar.playlistList.count - 1 : 0
       return
     }
     if (!Api.isCursorListAction(action)) return
@@ -1179,8 +1273,8 @@ Item {
   function syncCursorFocus() {
     if (!panelCursorActive || typingInField) return
     if (panelCursorAction === "sidebar-playlists") {
-      if (playlistShortcuts.currentIndex < 0 && playlistShortcuts.count > 0)
-        playlistShortcuts.currentIndex = 0
+      if (sidebar.playlistList.currentIndex < 0 && sidebar.playlistList.count > 0)
+        sidebar.playlistList.currentIndex = 0
       blurPageLists()
       focusScope.forceActiveFocus()
       return
@@ -1240,7 +1334,11 @@ Item {
     panelCursorActive = true
     ensurePanelCursor()
     var action = panelCursorAction
-    if (action === "nav-home") chooseTab("home")
+    if (action === "forward") goForward()
+    else if (action === "sidebar-toggle") sidebarCollapsed = !sidebarCollapsed
+    else if (action === "now-playing-pane") toggleRightPane("now-playing")
+    else if (action === "queue-pane") toggleRightPane("queue")
+    else if (action === "nav-home") chooseTab("home")
     else if (action === "nav-search") { chooseTab("search"); focusSearch() }
     else if (action === "nav-discover") chooseTab("discover")
     else if (action === "nav-radio") openLastRadio()
@@ -1249,12 +1347,9 @@ Item {
     else if (action === "nav-playlists") chooseTab("playlists")
     else if (action === "nav-create") openCreatePlaylistPopup()
     else if (action === "sidebar-playlists") {
-      var playlists = service ? service.sidebarPlaylists() : []
-      var playlist = playlists[playlistShortcuts.currentIndex]
-      if (playlist) {
-        chooseTab("playlists")
-        service.openPlaylist(playlist)
-      }
+      var playlists = sidebarItems()
+      var playlist = playlists[sidebar.playlistList.currentIndex]
+      if (playlist) openPlaylist(playlist)
     } else if (action === "nav-settings") chooseTab("setup")
     else if (action === "back") goBack()
     else if (action === "search") focusSearch()
@@ -1589,6 +1684,16 @@ Item {
     var delta = (key === Qt.Key_Up || text === "k" || key === Qt.Key_Left
       || text === "h") ? -1 : 1
 
+    if (shift && !ctrl && !alt && (key === Qt.Key_Up || key === Qt.Key_Down)
+        && panelCursorRegion === "page" && Api.isCursorListAction(panelCursorAction)) {
+      var collection = collectionForListAction(panelCursorAction)
+      if (collection && collection.enableSelection) {
+        var next = Api.listIndexAfterMove(collection.listCount, collection.listCurrentIndex, delta)
+        if (next >= 0) collection.selectRow(next, Qt.ShiftModifier)
+        return true
+      }
+    }
+
     if (!ctrl && !alt && !(shift && (key === Qt.Key_Left || key === Qt.Key_Right
           || key === Qt.Key_Up || key === Qt.Key_Down))
         && (vertical || horizontal) && (panelCursorActive
@@ -1725,9 +1830,21 @@ Item {
       unifiedSearchField.text = next
   }
 
+  function requestSearch(query, type, force) {
+    if (!service) return
+    return type === "all" ? service.searchAll(query, force) : service.search(query, type, force)
+  }
+
   function runUnifiedSearch(force) {
     unifiedSearchDelay.stop()
     if (!service) return
+    var pasted = Navigation.spotifyLink(unifiedSearchText())
+    if (pasted) {
+      if (activeSearchScope.available && searchInContext) setScopedSearchText("")
+      else searchText = ""
+      openItem(pasted)
+      return
+    }
     if (activeSearchScope.available && searchInContext) {
       if (activeSearchScope.mode === "artist")
         service.findArtistMusic(artistSearchText)
@@ -1736,7 +1853,7 @@ Item {
     if (currentTab !== "search" && searchText.trim() !== "")
       universalSearchActive = true
     if (searchText.trim() === "") service.clearSearch()
-    else service.search(searchText, searchType, force === true)
+    else requestSearch(searchText, searchType, force === true)
   }
 
   function editUnifiedSearch(value) {
@@ -1755,6 +1872,7 @@ Item {
       return
     }
     searchText = text
+    restoredSearchItemCount = 0
     if (!service) return
     if (text.trim() === "") {
       service.clearSearch()
@@ -1797,7 +1915,7 @@ Item {
       universalSearchActive = true
       if (service) {
         if (searchText.trim() === "") service.clearSearch()
-        else service.search(searchText, searchType)
+        else requestSearch(searchText, searchType)
       }
     } else {
       searchInContext = true
@@ -1832,10 +1950,13 @@ Item {
   }
 
   function selectSearchType(type) {
-    var value = Api.normalizedSearchType(type)
-    if (searchType !== value) searchType = value
+    var value = type === "all" ? "all" : Api.normalizedSearchType(type)
+    if (searchType !== value) {
+      restoredSearchItemCount = 0
+      searchType = value
+    }
     if (service && showingUniversalSearch && searchText.trim() !== "")
-      service.search(searchText, value)
+      requestSearch(searchText, value)
   }
 
   function seekBy(seconds) {
@@ -1891,11 +2012,11 @@ Item {
     var requestedDetail = requestedTab === "detail" && payload.detailItem
       ? payload.detailItem : null
     restoreUiState(!requestedDetail)
-    if (requestedTab === "home" && ["gems", "recent", "tracks", "artists", "albums"].indexOf(String(payload.homeType || "")) >= 0)
+    if (requestedTab === "home" && ["overview", "gems", "recent", "tracks", "artists", "albums"].indexOf(String(payload.homeType || "")) >= 0)
       homeType = String(payload.homeType)
     if (requestedDetail) {
       currentTab = "detail"
-      navigationStack = []
+      rememberRoute()
       searchInContext = true
       universalSearchActive = false
       artistSearchText = ""
@@ -1926,7 +2047,8 @@ Item {
         service.openDetail(requestedDetail)
       if (currentTab === "search" && Api.searchNeedsLoad(searchText,
           service.searchResultQuery, service.searchLoadedTypes[searchType]))
-        service.search(searchText, searchType)
+        requestSearch(searchText, searchType)
+      ensureRouteDepth()
     }
     Qt.callLater(function() {
       focusScope.forceActiveFocus()
@@ -1935,8 +2057,19 @@ Item {
 
   function close() {
     persistUiState()
-    clearShortcutMode()
     closingFromHost = true
+    playlistPicker.close()
+    pendingPlaylistItem = null
+    newPlaylistName = ""
+    mediaContextMenu.close()
+    Qt.callLater(releaseClosedContext)
+    playlistEditor.close()
+    playlistEditor.playlist = null
+    createPlaylistPopup.close()
+    shortcutHelpPopup.close()
+    sleepPopup.close()
+    lyricsInstallPopup.close()
+    clearShortcutMode()
     opened = false
     if (service) {
       service.setUiVisible("full-panel", false)
@@ -1971,6 +2104,7 @@ Item {
       return
     }
     var enteringSearch = currentTab !== "search" && tab === "search"
+    if (currentTab !== tab) rememberRoute()
     disarmEscapeClose()
     unifiedSearchDelay.stop()
     if (showingUniversalSearch && tab !== "search" && service) service.cancelSearch(false)
@@ -1978,22 +2112,20 @@ Item {
     universalSearchActive = false
     rememberCurrentContentTab()
     currentTab = tab
-    if (tab !== "detail") navigationStack = []
     openedForLogin = false
     if (service) {
       service.openView(tab, false)
       if (tab === "playlists") restorePlaylistSelection()
       if (enteringSearch && Api.searchNeedsLoad(searchText,
           service.searchResultQuery, service.searchLoadedTypes[searchType]))
-        service.search(searchText, searchType)
+        requestSearch(searchText, searchType)
     }
     syncUnifiedSearchField()
   }
 
   function openLastRadio() {
     if (!service || !service.lastRadioPlaylist) return
-    chooseTab("playlists")
-    service.openPlaylist(service.lastRadioPlaylist)
+    openPlaylist(service.lastRadioPlaylist)
   }
 
   function primaryNavigationItems() {
@@ -2056,8 +2188,19 @@ Item {
   onShortcutHintsEnabledChanged: if (!shortcutHintsEnabled) clearShortcutMode()
   onCurrentTabChanged: {
     root.rememberCurrentContentTab()
+    syncDiscoverySurface()
     if (panelCursorActive) ensurePanelCursor()
   }
+  function syncDiscoverySurface() {
+    if (!service) return
+    service.setDiscoverySurfaceVisible("panel", opened && currentTab === "home" && homeType === "gems")
+    if (opened && currentTab === "home") service.selectHomeTab(homeType)
+  }
+  onOpenedChanged: syncDiscoverySurface()
+  onHomeTypeChanged: syncDiscoverySurface()
+  onLibraryTypeChanged: restoredLibraryItemCount = 0
+  onSearchTypeChanged: restoredSearchItemCount = 0
+  onSearchTextChanged: restoredSearchItemCount = 0
   onPanelCursorActionChanged: syncCollectionCursor()
   onPanelCursorRegionChanged: syncCollectionCursor()
   onPanelCursorActiveChanged: syncCollectionCursor()
@@ -2069,10 +2212,35 @@ Item {
   onServiceChanged: Qt.callLater(function() { root.updateLoginGate() })
 
 
+  // List delegates can finish incubating after their model's countChanged signal.
+  Timer {
+    interval: 50
+    repeat: true
+    running: root.opened && root.pendingFocusIndex >= 0 && root.focusRestoreAttempts < 20
+    onTriggered: { root.focusRestoreAttempts++; root.restoreRouteFocus() }
+  }
+  onPendingFocusIndexChanged: focusRestoreAttempts = 0
+
+  Connections {
+    target: root.pendingFocusIndex >= 0
+      ? root.collectionForListAction(root.panelCursorAction) || root.pageCollection() : null
+    ignoreUnknownSignals: true
+    function onListCountChanged() { Qt.callLater(root.restoreRouteFocus) }
+    function onRestoreReadyChanged() { Qt.callLater(root.restoreRouteFocus) }
+  }
+  Connections {
+    target: root.pendingFocusIndex >= 0 ? root.pageListView() : null
+    ignoreUnknownSignals: true
+    function onCountChanged() { Qt.callLater(root.restoreRouteFocus) }
+  }
+
   Connections {
     target: root.service
     ignoreUnknownSignals: true
     function onPlaylistsChanged() { root.restorePlaylistSelection() }
+    function onDetailItemsChanged() { root.focusRestoreAttempts = 0; Qt.callLater(root.restoreRouteFocus) }
+    function onPlaylistItemsChanged() { root.focusRestoreAttempts = 0; Qt.callLater(root.restoreRouteFocus) }
+    function onSearchResultsChanged() { Qt.callLater(root.restoreRouteFocus) }
     function onRadioPlaylistReady(playlist) {
       if (!playlist || !root.service) return
       root.openLastRadio()
@@ -2152,7 +2320,7 @@ Item {
   }
 
   function playlistOptions() {
-    var playlists = service ? service.sidebarPlaylists() : []
+    var playlists = sidebarItems()
     var options = []
     for (var i = 0; i < playlists.length; i++) {
       var playlist = playlists[i]
@@ -2225,8 +2393,12 @@ Item {
   }
 
   function openPlaylistPicker(item) {
-    if (!item || item.kind !== "item") return
-    pendingPlaylistItem = item
+    var items = Array.isArray(item) ? item : [item]
+    items = items.filter(function(value) {
+      return value && value.kind === "item" && ["track", "episode"].indexOf(value.type) >= 0
+    })
+    if (!items.length) return
+    pendingPlaylistItem = items
     playlistPicker.open()
   }
 
@@ -2243,8 +2415,7 @@ Item {
       createPlaylistPopup.close()
       createPlaylistName = ""
       if (!playlist) return
-      root.chooseTab("playlists")
-      root.service.openPlaylist(playlist)
+      root.openPlaylist(playlist)
     })
   }
 
@@ -2457,6 +2628,7 @@ Item {
 
   Popup {
     id: mediaContextMenu
+    objectName: "spotify-media-context-menu"
     parent: window.contentItem
     width: Math.min(Style.space(310), window.width - Style.space(24))
     height: Math.min(window.height - Style.space(24),
@@ -2484,7 +2656,8 @@ Item {
         root.ensurePanelCursor(root.popupReturnRegion)
         root.syncCursorFocus()
       }
-      Qt.callLater(function() { focusScope.forceActiveFocus() })
+      Qt.callLater(root.releaseClosedContext)
+      Qt.callLater(function() { if (root.opened) focusScope.forceActiveFocus() })
     }
 
     background: BorderSurface {
@@ -2595,13 +2768,15 @@ Item {
       ContextMenuButton {
         contextAction: "ctx-play"
         visible: root.contextItem
+          && (!root.contextIsQueue || (root.service && root.service.queueCanActivate))
           && ["show", "audiobook"].indexOf(root.contextItem.type) < 0
         text: "Play"
         iconText: "󰐊"
         onClicked: {
           mediaContextMenu.close()
-          root.activateMedia(root.contextItem, root.contextSourceItems,
-            root.contextPlaybackUri)
+          if (root.contextIsQueue) {
+            if (root.service) root.service.activateQueueItem(root.contextItem)
+          } else root.activateMedia(root.contextItem, root.contextSourceItems, root.contextPlaybackUri)
         }
       }
 
@@ -2667,6 +2842,18 @@ Item {
         onClicked: {
           mediaContextMenu.close()
           root.openItem(root.contextItem)
+        }
+      }
+
+      ContextMenuButton {
+        contextAction: "ctx-edit-playlist"
+        visible: root.contextItem && root.service && root.service.playlistOwned(root.contextItem)
+        text: "Edit playlist details…"
+        enabled: root.service && !root.service.playlistActionBusy
+        onClicked: {
+          playlistEditor.playlist = root.contextItem
+          mediaContextMenu.close()
+          playlistEditor.open()
         }
       }
 
@@ -2749,7 +2936,7 @@ Item {
         visible: root.contextPlaylist && root.service
           && root.service.playlistEditable(root.contextPlaylist)
           && root.contextItem && root.contextItem.kind === "item"
-        text: "Remove from playlist"
+        text: "Remove all copies from playlist"
         iconText: "󰅖"
         onClicked: {
           var position = root.playlistPosition(root.contextItem)
@@ -2792,6 +2979,13 @@ Item {
 
   Popup {
     id: playlistPicker
+    objectName: "spotify-playlist-picker"
+    onClosed: {
+      if (!opened) {
+        root.pendingPlaylistItem = null
+        root.newPlaylistName = ""
+      }
+    }
     parent: window.contentItem
     x: Math.max(Style.space(8), (window.width - width) / 2)
     y: Math.max(Style.space(8), (window.height - height) / 2)
@@ -2814,8 +3008,8 @@ Item {
 
       Text {
         width: parent.width
-        text: root.pendingPlaylistItem
-          ? "Add “" + String(root.pendingPlaylistItem.name || "song") + "” to a playlist"
+        text: root.pendingPlaylistItem && root.pendingPlaylistItem.length
+          ? "Add " + root.pendingPlaylistItem.length + " selected items to a playlist"
           : "Add to playlist"
         color: root.foreground
         font.family: root.fontFamily
@@ -2849,18 +3043,22 @@ Item {
 
         Button {
           id: createPlaylistButton
+          objectName: "playlist-picker-create"
           text: "Create"
           iconText: "󰐕"
           foreground: root.foreground
           enabled: root.service && root.newPlaylistName.trim() !== ""
             && !root.service.playlistActionBusy
           onClicked: {
-            if (!root.service) return
-            root.service.createPlaylist(root.newPlaylistName, function(playlist) {
-              if (root.pendingPlaylistItem) root.service.addItemToPlaylist(
-                root.pendingPlaylistItem, playlist)
-              root.newPlaylistName = ""
-              playlistPicker.close()
+            var items = root.pendingPlaylistItem
+            var actionService = root.service
+            if (!actionService || !items || !items.length) return
+            actionService.createPlaylist(root.newPlaylistName, function(playlist) {
+              if (playlist) actionService.addItemsToPlaylist(items, playlist)
+              if (root.pendingPlaylistItem === items) {
+                root.newPlaylistName = ""
+                playlistPicker.close()
+              }
             })
           }
         }
@@ -2895,13 +3093,15 @@ Item {
           leftAlign: true
           onClicked: {
             if (root.service && root.pendingPlaylistItem)
-              root.service.addItemToPlaylist(root.pendingPlaylistItem, modelData)
+              root.service.addItemsToPlaylist(root.pendingPlaylistItem, modelData)
             playlistPicker.close()
           }
         }
       }
     }
   }
+
+  PlaylistEditor { id: playlistEditor; parent: window.contentItem; controller: root }
 
   Popup {
     id: createPlaylistPopup
@@ -3097,6 +3297,7 @@ Item {
 
   FloatingWindow {
     id: window
+    objectName: "spotify-panel-window"
     visible: root.opened
     title: "Omarchy Spotify"
     color: root.background
@@ -3156,6 +3357,12 @@ Item {
       }
       Keys.onEscapePressed: function(event) {
         root.latchShortcutMode()
+        var selectedCollection = root.pageCollection()
+        if (selectedCollection && selectedCollection.selectionCount > 0) {
+          selectedCollection.clearSelection()
+          event.accepted = true
+          return
+        }
         if (root.dismissTransientPopup()) {
           root.disarmEscapeClose()
           event.accepted = true
@@ -3227,6 +3434,11 @@ Item {
           root.latchShortcutMode(sequence)
           root.goBack()
         }
+      }
+      Shortcut {
+        sequence: "Alt+Right"
+        enabled: !root.shortcutsBlocked && root.forwardStack.length > 0
+        onActivated: { root.latchShortcutMode(sequence); root.goForward() }
       }
       Shortcut {
         sequence: "Ctrl+,"
@@ -3407,350 +3619,15 @@ Item {
           anchors.bottomMargin: Style.space(10)
           spacing: sidebar.visible ? Style.space(10) : 0
 
-          BorderSurface {
+          DesktopSidebar {
             id: sidebar
-            visible: root.currentTab !== "login" && !root.extraNarrowWidth
-            width: visible
-              ? (root.compactWidth ? Style.space(54)
-                : Math.min(Style.space(214), Math.max(Style.space(176), workspace.width * 0.225)))
-              : 0
-            height: parent.height
-            radius: Style.cornerRadius
-            color: Style.normalFillFor(root.foreground, root.accent)
-            borderSpec: Border.controlSpec("normal", root.foreground, root.accent)
-
-            Row {
-              id: brandRow
-              visible: !root.compactHeight
-              anchors.left: parent.left
-              anchors.right: parent.right
-              anchors.top: parent.top
-              anchors.margins: visible ? Style.space(11) : 0
-              height: visible ? Style.space(42) : 0
-              spacing: Style.space(9)
-
-              OpticalGlyph {
-                width: root.compactWidth ? parent.width : Style.space(18)
-                height: parent.height
-                text: ""
-                color: root.accent
-                fontFamily: root.fontFamily
-                fontSize: Style.font.iconLarge
-              }
-
-              Column {
-                visible: !root.compactWidth
-                width: Math.max(40, parent.width - Style.space(38))
-                anchors.verticalCenter: parent.verticalCenter
-                spacing: 0
-
-                Text {
-                  width: parent.width
-                  text: "Music"
-                  color: root.foreground
-                  font.family: root.fontFamily
-                  font.pixelSize: Style.font.subtitle
-                  font.bold: true
-                  elide: Text.ElideRight
-                }
-                Text {
-                  width: parent.width
-                  text: "for Spotify"
-                  color: root.muted
-                  font.family: root.fontFamily
-                  font.pixelSize: Style.font.caption
-                  elide: Text.ElideRight
-                }
-              }
-            }
-
-            Column {
-              id: primaryNavigation
-              anchors.left: parent.left
-              anchors.right: parent.right
-              anchors.top: brandRow.visible ? brandRow.bottom : parent.top
-              anchors.margins: Style.space(8)
-              spacing: Style.space(2)
-
-              PanelSeparator {
-                width: parent.width
-                foreground: root.foreground
-              }
-
-              Repeater {
-                model: root.primaryNavigationItems()
-
-                Button {
-                  required property var modelData
-                  readonly property bool radioEntry: modelData.id === "radio"
-                  width: primaryNavigation.width
-                  text: root.compactWidth ? "" : modelData.label
-                  iconText: root.compactWidth ? "" : modelData.icon
-                  foreground: root.foreground
-                  selected: radioEntry ? root.radioNavigationSelected()
-                    : root.currentTab === modelData.id
-                  leftAlign: !root.compactWidth
-                  horizontalPadding: root.compactWidth
-                    ? 0 : Style.spacing.controlPaddingX
-                  focusable: false
-                  hasCursor: root.cursorOn("sidebar", "nav-" + modelData.id)
-                  tooltipText: radioEntry && root.service && root.service.lastRadioPlaylist
-                    ? modelData.label + " · " + root.service.lastRadioPlaylist.name
-                    : root.shortcutHint(modelData.label,
-                      root.primaryNavigationShortcut(modelData.id))
-                  onClicked: {
-                    if (radioEntry) root.openLastRadio()
-                    else root.chooseTab(modelData.id)
-                  }
-                  onHovered: function(on) {
-                    if (on) root.setPanelCursor("sidebar", "nav-" + modelData.id)
-                  }
-                  KeyHint {
-                    region: "sidebar"
-                    action: "nav-" + modelData.id
-                    sequences: root.primaryNavigationShortcut(modelData.id)
-                  }
-                  OpticalGlyph {
-                    anchors.fill: parent
-                    visible: root.compactWidth
-                    text: modelData.icon
-                    color: parent.selected
-                      ? Style.selectedStateColor(root.foreground, root.accent)
-                      : root.foreground
-                    fontFamily: root.fontFamily
-                    fontSize: Style.font.icon
-                  }
-                }
-              }
-
-              PanelSeparator {
-                width: parent.width
-                foreground: root.foreground
-              }
-            }
-
-            Text {
-              id: playlistShortcutsHeading
-              visible: !root.compactWidth
-              anchors.left: parent.left
-              anchors.right: parent.right
-              anchors.top: primaryNavigation.bottom
-              anchors.leftMargin: Style.space(13)
-              anchors.rightMargin: Style.space(13)
-              anchors.topMargin: Style.space(9)
-              height: visible ? implicitHeight : 0
-              text: "YOUR LIBRARY"
-              color: root.muted
-              font.family: root.fontFamily
-              font.pixelSize: Style.font.caption
-              font.bold: true
-            }
-
-            Column {
-              id: libraryNavigation
-              anchors.left: parent.left
-              anchors.right: parent.right
-              anchors.top: playlistShortcutsHeading.visible
-                ? playlistShortcutsHeading.bottom : primaryNavigation.bottom
-              anchors.leftMargin: Style.space(8)
-              anchors.rightMargin: Style.space(8)
-              anchors.topMargin: Style.space(6)
-              spacing: Style.space(2)
-
-              Button {
-                width: parent.width
-                text: root.compactWidth ? "" : "Liked Songs"
-                iconText: root.compactWidth ? "" : "󰋑"
-                foreground: root.foreground
-                selected: root.currentTab === "library"
-                leftAlign: !root.compactWidth
-                horizontalPadding: root.compactWidth
-                  ? 0 : Style.spacing.controlPaddingX
-                focusable: false
-                hasCursor: root.cursorOn("sidebar", "nav-library")
-                tooltipText: "Liked Songs"
-                onClicked: root.chooseTab("library")
-                onHovered: function(on) {
-                  if (on) root.setPanelCursor("sidebar", "nav-library")
-                }
-                KeyHint { region: "sidebar"; action: "nav-library" }
-                OpticalGlyph {
-                  anchors.fill: parent
-                  visible: root.compactWidth
-                  text: "󰋑"
-                  color: parent.selected
-                    ? Style.selectedStateColor(root.foreground, root.accent)
-                    : root.foreground
-                  fontFamily: root.fontFamily
-                  fontSize: Style.font.icon
-                }
-              }
-
-              Grid {
-                width: parent.width
-                columns: root.compactWidth ? 1 : 2
-                spacing: Style.space(2)
-
-                Button {
-                  width: root.compactWidth ? parent.width
-                    : Math.max(20, parent.width - createPlaylistShortcut.width
-                      - parent.spacing)
-                  text: root.compactWidth ? "" : "Playlists"
-                  iconText: root.compactWidth ? "" : "󱁐"
-                  foreground: root.foreground
-                  selected: root.currentTab === "playlists"
-                  leftAlign: !root.compactWidth
-                  horizontalPadding: root.compactWidth
-                    ? 0 : Style.spacing.controlPaddingX
-                  focusable: false
-                  hasCursor: root.cursorOn("sidebar", "nav-playlists")
-                  tooltipText: "Playlists"
-                  onClicked: root.chooseTab("playlists")
-                  onHovered: function(on) {
-                    if (on) root.setPanelCursor("sidebar", "nav-playlists")
-                  }
-                  KeyHint { region: "sidebar"; action: "nav-playlists" }
-                  OpticalGlyph {
-                    anchors.fill: parent
-                    visible: root.compactWidth
-                    text: "󱁐"
-                    color: parent.selected
-                      ? Style.selectedStateColor(root.foreground, root.accent)
-                      : root.foreground
-                    fontFamily: root.fontFamily
-                    fontSize: Style.font.icon
-                  }
-                }
-
-                Button {
-                  id: createPlaylistShortcut
-                  width: root.compactWidth
-                    ? parent.width : implicitWidth
-                  text: "+"
-                  foreground: root.foreground
-                  fontSize: Style.font.subtitle
-                  horizontalPadding: Style.space(7)
-                  focusable: false
-                  hasCursor: root.cursorOn("sidebar", "nav-create")
-                  tooltipText: "Create a new playlist"
-                  enabled: root.accountConnected && root.service
-                    && !root.service.playlistActionBusy
-                  onClicked: root.openCreatePlaylistPopup()
-                  onHovered: function(on) {
-                    if (on) root.setPanelCursor("sidebar", "nav-create")
-                  }
-                  KeyHint { region: "sidebar"; action: "nav-create" }
-                }
-              }
-            }
-
-            ListView {
-              id: playlistShortcuts
-              visible: !root.compactWidth
-              anchors.left: parent.left
-              anchors.right: parent.right
-              anchors.top: libraryNavigation.bottom
-              anchors.bottom: setupNavButton.top
-              anchors.margins: Style.space(8)
-              model: root.service ? root.service.sidebarPlaylists() : []
-              clip: true
-              spacing: Style.space(1)
-              reuseItems: true
-              keyNavigationEnabled: false
-              highlightFollowsCurrentItem: true
-
-              FastScrollHandler {
-                parent: playlistShortcuts
-                flickable: playlistShortcuts
-                onScrolled: {
-                  if (playlistShortcuts.atYEnd && root.service
-                      && root.service.playlistsNext
-                      && !root.service.playlistsLoading)
-                    root.service.loadMorePlaylists()
-                }
-              }
-
-              onMovementEnded: {
-                if (atYEnd && root.service && root.service.playlistsNext
-                    && !root.service.playlistsLoading) root.service.loadMorePlaylists()
-              }
-
-              delegate: Button {
-                required property var modelData
-                required property int index
-                width: ListView.view.width
-                text: root.sidebarPlaylistName(modelData)
-                iconText: "󰲸"
-                foreground: root.foreground
-                leftAlign: true
-                focusable: false
-                hasCursor: root.cursorOn("sidebar", "sidebar-playlists")
-                  && ListView.isCurrentItem
-                selected: root.currentTab === "playlists" && root.service
-                  && root.service.selectedPlaylist
-                  && root.service.selectedPlaylist.id === modelData.id
-                tooltipText: modelData.name || "Playlist"
-                onClicked: {
-                  root.chooseTab("playlists")
-                  if (root.service) root.service.openPlaylist(modelData)
-                }
-                onHovered: function(on) {
-                  if (!on) return
-                  playlistShortcuts.currentIndex = index
-                  root.setPanelCursor("sidebar", "sidebar-playlists")
-                }
-                KeyHint {
-                  active: root.shortcutHintsActive
-                  navHint: {
-                    playlistShortcuts.currentIndex
-                    playlistShortcuts.contentY
-                    root.panelCursorAction
-                    root.panelCursorRegion
-                    root.hintCtrlHeld
-                    root.hintShiftHeld
-                    root.hintAltHeld
-                    return root.sidebarPlaylistNavHint(index)
-                  }
-                }
-              }
-            }
-
-            Button {
-              id: setupNavButton
-              anchors.left: parent.left
-              anchors.right: parent.right
-              anchors.bottom: parent.bottom
-              anchors.margins: Style.space(8)
-              text: root.compactWidth ? "" : "Settings"
-              iconText: root.compactWidth ? ""
-                : (root.service && root.service.auth.loggedIn ? "󰀄" : "󰒓")
-              foreground: root.foreground
-              selected: root.currentTab === "setup"
-              leftAlign: !root.compactWidth
-              focusable: false
-              hasCursor: root.cursorOn("sidebar", "nav-settings")
-              tooltipText: root.shortcutHint("Settings", "Ctrl+,")
-              KeyHint { region: "sidebar"; action: "nav-settings"; sequences: ["Ctrl+,"] }
-              onClicked: root.chooseTab("setup")
-              onHovered: function(on) {
-                if (on) root.setPanelCursor("sidebar", "nav-settings")
-              }
-              OpticalGlyph {
-                anchors.fill: parent
-                visible: root.compactWidth
-                text: root.service && root.service.auth.loggedIn ? "󰀄" : "󰒓"
-                color: parent.selected
-                  ? Style.selectedStateColor(root.foreground, root.accent)
-                  : root.foreground
-                fontFamily: root.fontFamily
-                fontSize: Style.font.icon
-              }
-            }
+            controller: root
           }
 
           Item {
             id: contentPane
-            width: Math.max(1, parent.width - sidebar.width - workspace.spacing)
+            width: Math.max(1, parent.width - sidebar.width - rightPaneLoader.width
+              - workspace.spacing * (rightPaneLoader.visible ? 2 : 1))
             height: parent.height
 
             Row {
@@ -3816,9 +3693,38 @@ Item {
                 KeyHint { region: "header"; action: "back"; sequences: ["Alt+Left"] }
               }
 
+              Button {
+                id: forwardButton
+                visible: root.forwardStack.length > 0
+                anchors.verticalCenter: parent.verticalCenter
+                iconText: "󰁔"
+                foreground: root.foreground
+                tooltipText: root.shortcutHint("Forward", "Alt+Right")
+                focusable: false
+                hasCursor: root.cursorOn("header", "forward")
+                onClicked: root.goForward()
+                onHovered: function(on) { if (on) root.setPanelCursor("header", "forward") }
+                KeyHint { region: "header"; action: "forward"; sequences: ["Alt+Right"] }
+              }
+              Button {
+                id: sidebarToggleButton
+                visible: root.currentTab !== "login" && !root.extraNarrowWidth
+                anchors.verticalCenter: parent.verticalCenter
+                iconText: "󰙀"
+                foreground: root.foreground
+                tooltipText: root.sidebarCollapsed ? "Expand library sidebar" : "Collapse library sidebar"
+                focusable: false
+                hasCursor: root.cursorOn("header", "sidebar-toggle")
+                onClicked: root.sidebarCollapsed = !root.sidebarCollapsed
+                onHovered: function(on) { if (on) root.setPanelCursor("header", "sidebar-toggle") }
+                KeyHint { region: "header"; action: "sidebar-toggle" }
+              }
               Column {
                 width: Math.max(80, parent.width
                   - (backButton.visible ? backButton.width + parent.spacing : 0)
+                  - (forwardButton.visible ? forwardButton.width + parent.spacing : 0)
+                  - (sidebarToggleButton.visible ? sidebarToggleButton.width + parent.spacing : 0)
+                  - (nowPlayingPaneButton.visible ? nowPlayingPaneButton.width + queuePaneButton.width + parent.spacing * 2 : 0)
                   - (shortcutHintsDismissButton.visible
                     ? shortcutHintsDismissButton.width : 0)
                   - shortcutHelpButton.width - refreshButton.width - closeButton.width
@@ -3846,6 +3752,34 @@ Item {
                 }
               }
 
+              Button {
+                id: nowPlayingPaneButton
+                visible: root.currentTab !== "login" && !root.compactWidth
+                anchors.verticalCenter: parent.verticalCenter
+                iconText: "󰐎"
+                foreground: root.foreground
+                selected: root.rightPane === "now-playing"
+                tooltipText: "Now playing details"
+                focusable: false
+                hasCursor: root.cursorOn("header", "now-playing-pane")
+                onClicked: root.toggleRightPane("now-playing")
+                onHovered: function(on) { if (on) root.setPanelCursor("header", "now-playing-pane") }
+                KeyHint { region: "header"; action: "now-playing-pane" }
+              }
+              Button {
+                id: queuePaneButton
+                visible: nowPlayingPaneButton.visible
+                anchors.verticalCenter: parent.verticalCenter
+                iconText: "󰐕"
+                foreground: root.foreground
+                selected: root.rightPane === "queue"
+                tooltipText: "Queue sidebar"
+                focusable: false
+                hasCursor: root.cursorOn("header", "queue-pane")
+                onClicked: root.toggleRightPane("queue")
+                onHovered: function(on) { if (on) root.setPanelCursor("header", "queue-pane") }
+                KeyHint { region: "header"; action: "queue-pane" }
+              }
               Button {
                 id: shortcutHintsDismissButton
                 visible: root.shortcutHintsActive && !root.extraNarrowWidth
@@ -4056,6 +3990,9 @@ Item {
 
             Loader {
               id: pageLoader
+              objectName: "spotify-page-loader"
+              asynchronous: true
+              active: root.opened
               anchors.left: parent.left
               anchors.right: parent.right
               anchors.top: unifiedSearchBar.visible ? unifiedSearchBar.bottom
@@ -4063,7 +4000,20 @@ Item {
               anchors.topMargin: Style.space(8)
               anchors.bottom: parent.bottom
               sourceComponent: root.pageComponent()
+              onLoaded: Qt.callLater(root.restoreRouteFocus)
             }
+          }
+          Loader {
+            id: rightPaneLoader
+            objectName: "spotify-right-pane-loader"
+            asynchronous: true
+            active: root.opened && root.currentTab !== "login"
+              && !root.compactWidth && root.rightPane !== ""
+              && !(root.currentTab === "queue" && root.rightPane === "queue")
+            visible: active
+            width: active ? Math.min(Style.space(280), workspace.width * 0.28) : 0
+            height: parent.height
+            sourceComponent: root.rightPane === "queue" ? queueDrawerComponent : nowPlayingComponent
           }
         }
 
@@ -4626,139 +4576,17 @@ Item {
   }
 
   Component {
+    id: queueDrawerComponent
+    QueuePage { controller: root; drawer: true }
+  }
+  Component {
+    id: nowPlayingComponent
+    NowPlayingPane { controller: root }
+  }
+
+  Component {
     id: homePage
-
-    Item {
-      Column {
-        anchors.fill: parent
-        spacing: Style.space(7)
-
-        Flow {
-          id: homeTypes
-          width: parent.width
-          spacing: Style.space(4)
-
-          Repeater {
-            model: [
-              { type: "gems", label: "Hidden gems", icon: "󰎆" },
-              { type: "recent", label: "Recently played", icon: "󰋚" },
-              { type: "tracks", label: "Top songs", icon: "󰎈" },
-              { type: "artists", label: "Top artists", icon: "󰠃" },
-              { type: "albums", label: "Top albums", icon: "󰀥" }
-            ]
-            Button {
-              required property var modelData
-              text: modelData.label
-              iconText: modelData.icon
-              foreground: root.foreground
-              selected: root.homeType === modelData.type
-              tooltipText: modelData.type === "albums"
-                ? "Albums ranked by their songs in your Top songs" : ""
-              focusable: false
-              hasCursor: root.cursorOn("page", "home-" + modelData.type)
-              onClicked: root.homeType = modelData.type
-              onHovered: function(on) {
-                if (on) root.setPanelCursor("page", "home-" + modelData.type)
-              }
-              KeyHint { region: "page"; action: "home-" + modelData.type }
-            }
-          }
-        }
-
-        Flow {
-          id: gemControls
-          width: parent.width
-          visible: root.homeType === "gems"
-          spacing: Style.space(5)
-          Button {
-            text: root.service ? root.service.discovery.obscurityLabel : "Obscure · <200,000"
-            foreground: root.foreground
-            tooltipText: "Last.fm total listeners: Obscure <200,000; Underground <50,000; Deep underground <10,000. Unknown counts are excluded."
-            focusable: false
-            hasCursor: root.cursorOn("page", "gem-obscurity")
-            onHovered: function(on) { if (on) root.setPanelCursor("page", "gem-obscurity") }
-            KeyHint { region: "page"; action: "gem-obscurity" }
-            onClicked: root.cycleDiscoverySetting("discoveryObscurity")
-          }
-          Button {
-            text: "Adventure · " + (root.service ? root.service.settings.discoveryAdventure : "Balanced")
-            foreground: root.foreground
-            tooltipText: "Cycle Close, Balanced, and Adventurous"
-            focusable: false
-            hasCursor: root.cursorOn("page", "gem-adventure")
-            onHovered: function(on) { if (on) root.setPanelCursor("page", "gem-adventure") }
-            KeyHint { region: "page"; action: "gem-adventure" }
-            onClicked: root.cycleDiscoverySetting("discoveryAdventure")
-          }
-          Button {
-            text: "Refresh gems"
-            foreground: root.foreground
-            enabled: root.service && !root.service.discovery.loading
-            focusable: false
-            hasCursor: root.cursorOn("page", "gem-refresh")
-            onHovered: function(on) { if (on) root.setPanelCursor("page", "gem-refresh") }
-            KeyHint { region: "page"; action: "gem-refresh" }
-            onClicked: if (root.service) root.service.loadHiddenGems(true)
-          }
-          Button {
-            text: "Last.fm settings"
-            foreground: root.foreground
-            focusable: false
-            hasCursor: root.cursorOn("page", "gem-settings")
-            onHovered: function(on) { if (on) root.setPanelCursor("page", "gem-settings") }
-            KeyHint { region: "page"; action: "gem-settings" }
-            onClicked: root.chooseTab("setup")
-          }
-        }
-        Text {
-          id: gemStatus
-          width: parent.width
-          text: root.service ? root.service.discovery.message || root.service.discovery.warning : ""
-          visible: root.homeType === "gems" && text !== ""
-          textFormat: Text.PlainText
-          color: root.muted
-          font.family: root.fontFamily
-          font.pixelSize: Style.font.caption
-          wrapMode: Text.WordWrap
-        }
-
-        MediaCollection {
-          width: parent.width
-          height: Math.max(40, parent.height - homeTypes.height - (gemControls.visible ? gemControls.height : 0) - (gemStatus.visible ? gemStatus.height : 0) - parent.spacing * (root.homeType === "gems" ? 3 : 1))
-          service: root.service
-          sourceItems: root.service ? root.service.homeItems(root.homeType) : []
-          filterText: root.homeFilter
-          showFilter: false
-          showQueue: true
-          showSave: true
-          browseContexts: true
-          loading: root.service && (root.homeType === "gems"
-            ? root.service.discovery.loading : root.service.homeLoading)
-          hasMore: false
-          restoredContentY: root.scrollFor("home:" + root.homeType)
-          stateKey: "home:" + root.homeType
-          emptyMessage: root.homeType === "gems"
-            ? (root.service ? root.service.discovery.setupMessage || root.service.discovery.message || "Your discoveries will appear here." : "Connect Spotify to find hidden gems.")
-            : root.service && root.service.homeLoading
-            ? "Loading your listening history…"
-            : (root.homeFilter.trim() ? "No matches in " + root.activeSearchScope.label + "."
-              : "No listening history is available yet.")
-          onActivated: function(item, items, uri) {
-            root.activateMedia(item, items, uri)
-          }
-          onOpened: function(item) { root.openItem(item) }
-          onQueued: function(item) { if (root.service) root.service.addToQueue(item) }
-          onPlaylistRequested: function(item) { root.openPlaylistPicker(item) }
-          onSaveToggled: function(item) { if (root.service) root.service.toggleSaved(item) }
-          onContextRequested: function(item, x, y, index, items, uri, playbackUri) {
-            root.openMediaContext(item, x, y, items, uri, index, playbackUri)
-          }
-          onViewStateChanged: function(filter, sort, y) {
-            root.rememberScroll("home:" + root.homeType, y)
-          }
-        }
-      }
-    }
+    HomePage { controller: root }
   }
 
   Component {
@@ -4766,8 +4594,14 @@ Item {
 
     Item {
       MediaCollection {
+        navigationOwner: root
         anchors.fill: parent
         service: root.service
+        onBatchQueueRequested: function(items) { if (root.service) root.service.addItemsToQueue(items) }
+        onListInteracted: root.setPanelCursor("page", keyboardListId)
+        onBatchPlaylistRequested: function(items) { root.openPlaylistPicker(items) }
+        onBatchSaveRequested: function(items) { if (root.service) root.service.toggleSavedItems(items) }
+        onBatchRemoveRequested: function(items) { if (root.service) root.service.removePlaylistItems(items, actionPlaylist) }
         sourceItems: root.service ? root.service.discoverPlaylists : []
         filterText: root.discoverFilter
         showFilter: false
@@ -4924,9 +4758,9 @@ Item {
               ArtistLinks {
                 width: parent.width
                 artists: root.service && root.service.detailItem
-                  ? root.service.detailItem.artists : []
+                  ? Api.arrayValues(root.service.detailItem.artists) : []
                 fallbackText: root.service && root.service.detailItem
-                  ? root.service.detailItem.subtitle : ""
+                  ? String(root.service.detailItem.subtitle || "") : ""
                 suffixText: root.service && root.service.detailItem
                   ? Api.artistSubtitleSuffix(root.service.detailItem) : ""
                 color: root.accent
@@ -5062,11 +4896,17 @@ Item {
               }
 
               MediaCollection {
+        navigationOwner: root
                 width: parent.width
                 height: Math.max(30, parent.height - artistAlbumsHeading.height
                   - parent.spacing)
                 keyboardListId: "list-albums"
                 service: root.service
+                onBatchQueueRequested: function(items) { if (root.service) root.service.addItemsToQueue(items) }
+                onListInteracted: root.setPanelCursor("page", keyboardListId)
+                onBatchPlaylistRequested: function(items) { root.openPlaylistPicker(items) }
+                onBatchSaveRequested: function(items) { if (root.service) root.service.toggleSavedItems(items) }
+                onBatchRemoveRequested: function(items) { if (root.service) root.service.removePlaylistItems(items, actionPlaylist) }
                 sourceItems: root.service ? root.service.artistAlbums : []
                 showFilter: false
                 showQueue: false
@@ -5106,12 +4946,18 @@ Item {
               }
 
               MediaCollection {
+        navigationOwner: root
                 width: parent.width
                 height: Math.max(30, parent.height - artistSongsHeading.height
                   - artistThisIsRow.height - parent.spacing
                   * (artistThisIsRow.visible ? 2 : 1))
                 keyboardListId: "list-songs"
                 service: root.service
+                onBatchQueueRequested: function(items) { if (root.service) root.service.addItemsToQueue(items) }
+                onListInteracted: root.setPanelCursor("page", keyboardListId)
+                onBatchPlaylistRequested: function(items) { root.openPlaylistPicker(items) }
+                onBatchSaveRequested: function(items) { if (root.service) root.service.toggleSavedItems(items) }
+                onBatchRemoveRequested: function(items) { if (root.service) root.service.removePlaylistItems(items, actionPlaylist) }
                 sourceItems: root.service ? root.service.artistSongs : []
                 showFilter: false
                 showQueue: true
@@ -5372,12 +5218,18 @@ Item {
         }
 
         MediaCollection {
+        navigationOwner: root
           id: detailCollection
           width: parent.width
           height: Math.max(40, parent.height - detailHero.height - detailNotice.height
             - parent.spacing * 2)
           visible: !detailRoot.isArtist
           service: root.service
+          onBatchQueueRequested: function(items) { if (root.service) root.service.addItemsToQueue(items) }
+          onListInteracted: root.setPanelCursor("page", keyboardListId)
+          onBatchPlaylistRequested: function(items) { root.openPlaylistPicker(items) }
+          onBatchSaveRequested: function(items) { if (root.service) root.service.toggleSavedItems(items) }
+          onBatchRemoveRequested: function(items) { if (root.service) root.service.removePlaylistItems(items, actionPlaylist) }
           sourceItems: root.service ? root.service.detailItems : []
           filterText: root.detailFilter
           sortKey: root.detailSort
@@ -5430,184 +5282,7 @@ Item {
 
   Component {
     id: searchPage
-
-    Item {
-      id: searchRoot
-
-      readonly property var items: root.service
-        ? root.service.searchItems(root.searchType) : []
-      readonly property string errorText: root.service
-        ? String(root.service.searchError || "") : ""
-
-      Component.onDestruction: {
-        if (root.service) root.service.cancelSearch(false)
-      }
-
-      Column {
-        anchors.fill: parent
-        spacing: Style.space(7)
-
-        Flow {
-          id: searchTypes
-          width: parent.width
-          spacing: Style.space(3)
-
-          Repeater {
-            model: [
-              { type: "track", label: "Songs" },
-              { type: "artist", label: "Artists" },
-              { type: "album", label: "Albums" },
-              { type: "playlist", label: "Playlists" },
-              { type: "show", label: "Podcasts" },
-              { type: "episode", label: "Episodes" },
-              { type: "audiobook", label: "Books" }
-            ]
-
-            Button {
-              required property var modelData
-              text: modelData.label
-              foreground: root.foreground
-              selected: root.searchType === modelData.type
-              focusable: false
-              horizontalPadding: Style.space(7)
-              hasCursor: root.cursorOn("page", "search-" + modelData.type)
-              onClicked: root.selectSearchType(modelData.type)
-              onHovered: function(on) {
-                if (on) root.setPanelCursor("page", "search-" + modelData.type)
-              }
-              KeyHint { region: "page"; action: "search-" + modelData.type }
-            }
-          }
-        }
-
-        Row {
-          id: searchStatus
-          width: parent.width
-          height: visible ? Math.max(searchErrorText.implicitHeight,
-            retrySearch.implicitHeight) : 0
-          spacing: Style.space(7)
-          visible: root.searchText.trim() !== "" && searchRoot.errorText !== ""
-
-          Text {
-            id: searchErrorText
-            width: Math.max(40, parent.width - retrySearch.width - parent.spacing)
-            anchors.verticalCenter: parent.verticalCenter
-            text: root.searchCooldownSeconds > 0 && root.service
-              ? root.service.searchProgressText(root.searchClock) : searchRoot.errorText
-            color: Color.urgent
-            font.family: root.fontFamily
-            font.pixelSize: Style.font.bodySmall
-            wrapMode: Text.WordWrap
-          }
-
-          Button {
-            id: retrySearch
-            enabled: root.searchCooldownSeconds === 0
-            hasCursor: root.cursorOn("page", "retry-search")
-            onHovered: function(on) { if (on) root.setPanelCursor("page", "retry-search") }
-            KeyHint { region: "page"; action: "retry-search" }
-            text: "Retry"
-            iconText: "󰑐"
-            foreground: root.foreground
-            onClicked: if (root.service)
-              root.service.retrySearch(root.searchType)
-          }
-        }
-
-        Column {
-          width: parent.width
-          spacing: Style.space(7)
-          visible: root.searchText.trim() === ""
-
-          Row {
-            width: parent.width
-
-            Text {
-              text: "RECENT SEARCHES"
-              color: root.foreground
-              font.family: root.fontFamily
-              font.pixelSize: Style.font.caption
-              font.bold: true
-            }
-            Item { width: Math.max(0, parent.width - clearHistory.width - Style.space(120)); height: 1 }
-            Button {
-              id: clearHistory
-              text: "Clear"
-              foreground: root.foreground
-              visible: root.service && root.service.searchHistory.length > 0
-              onClicked: root.service.clearSearchHistory()
-            }
-          }
-
-          Flow {
-            width: parent.width
-            spacing: Style.space(5)
-
-            Repeater {
-              model: root.service ? root.service.searchHistory : []
-              Button {
-                required property string modelData
-                text: modelData
-                iconText: "󰍉"
-                foreground: root.foreground
-                onClicked: {
-                  root.searchText = modelData
-                  root.service.search(modelData, root.searchType)
-                  Qt.callLater(function() { unifiedSearchField.forceActiveFocus() })
-                }
-              }
-            }
-          }
-
-          Text {
-            width: parent.width
-            visible: !root.service || root.service.searchHistory.length === 0
-            text: "Type a title, artist, album, playlist, podcast, episode, or audiobook."
-            color: root.muted
-            font.family: root.fontFamily
-            font.pixelSize: Style.font.bodySmall
-            wrapMode: Text.WordWrap
-          }
-        }
-
-        MediaCollection {
-          id: resultsView
-          width: parent.width
-          height: Math.max(40, parent.height - searchTypes.height
-            - searchStatus.height - parent.spacing * 2)
-          visible: root.searchText.trim() !== ""
-            && (searchRoot.errorText === "" || searchRoot.items.length > 0)
-          service: root.service
-          sourceItems: searchRoot.items
-          showFilter: false
-          showQueue: true
-          showSave: true
-          browseContexts: true
-          loading: root.service && root.service.searchLoading
-          hasMore: root.service && root.service.searchNext(root.searchType) !== ""
-          restoredContentY: root.scrollFor("search:" + root.searchType)
-          stateKey: "search:" + root.searchType
-          emptyMessage: root.service && root.service.searchLoading
-            ? root.service.searchProgressText(root.searchClock) : "No " + Api.searchTypeLabel(root.searchType)
-              + " results."
-          onActivated: function(item, items, uri) {
-            root.activateMedia(item, items, uri)
-          }
-          onOpened: function(item) { root.openItem(item) }
-          onQueued: function(item) { if (root.service) root.service.addToQueue(item) }
-          onPlaylistRequested: function(item) { root.openPlaylistPicker(item) }
-          onSaveToggled: function(item) { if (root.service) root.service.toggleSaved(item) }
-          onContextRequested: function(item, x, y, index, items, uri, playbackUri) {
-            root.openMediaContext(item, x, y, items, uri, index, playbackUri)
-          }
-          onLoadMoreRequested: if (root.service) root.service.loadMoreSearch(root.searchType)
-          onViewStateChanged: function(filter, sort, y) {
-            root.rememberScroll("search:" + root.searchType, y)
-          }
-        }
-      }
-
-    }
+    SearchPage { controller: root }
   }
 
   Component {
@@ -5655,10 +5330,17 @@ Item {
         }
 
         MediaCollection {
+        navigationOwner: root
           id: libraryCollection
+          restoreReady: !root.service || !root.service.libraryRestorePending(root.libraryType)
           width: parent.width
           height: Math.max(40, parent.height - libraryTypes.height - parent.spacing)
           service: root.service
+          onBatchQueueRequested: function(items) { if (root.service) root.service.addItemsToQueue(items) }
+          onListInteracted: root.setPanelCursor("page", keyboardListId)
+          onBatchPlaylistRequested: function(items) { root.openPlaylistPicker(items) }
+          onBatchSaveRequested: function(items) { if (root.service) root.service.toggleSavedItems(items) }
+          onBatchRemoveRequested: function(items) { if (root.service) root.service.removePlaylistItems(items, actionPlaylist) }
           sourceItems: root.service ? root.service.libraryItems(root.libraryType) : []
           filterText: root.libraryFilter
           sortKey: root.librarySort
@@ -5727,7 +5409,7 @@ Item {
               ? String(root.service.selectedPlaylist.id) : ""
             onChanged: function(value) {
               var playlist = root.service ? root.service.playlistById(value) : null
-              if (playlist) root.service.openPlaylist(playlist)
+              if (playlist) root.openPlaylist(playlist)
             }
           }
 
@@ -5823,10 +5505,16 @@ Item {
         }
 
         MediaCollection {
+        navigationOwner: root
           id: playlistItemsCollection
           width: parent.width
           height: Math.max(40, parent.height - selectedPlaylistHeader.height - parent.spacing)
           service: root.service
+          onBatchQueueRequested: function(items) { if (root.service) root.service.addItemsToQueue(items) }
+          onListInteracted: root.setPanelCursor("page", keyboardListId)
+          onBatchPlaylistRequested: function(items) { root.openPlaylistPicker(items) }
+          onBatchSaveRequested: function(items) { if (root.service) root.service.toggleSavedItems(items) }
+          onBatchRemoveRequested: function(items) { if (root.service) root.service.removePlaylistItems(items, actionPlaylist) }
           sourceItems: root.service ? root.service.playlistItems : []
           filterText: root.playlistFilter
           sortKey: root.playlistSort
@@ -5884,131 +5572,7 @@ Item {
 
   Component {
     id: queuePage
-
-    Item {
-      id: queueRoot
-      readonly property var visibleItems: Api.filteredSorted(
-        root.service ? root.service.queue : [], root.queueFilter, "default")
-
-      Column {
-        anchors.fill: parent
-        spacing: Style.space(8)
-
-        Row {
-          width: parent.width
-
-          Text {
-            text: "UP NEXT"
-            color: root.foreground
-            font.family: root.fontFamily
-            font.pixelSize: Style.font.caption
-            font.bold: true
-          }
-
-          Item { width: Math.max(0, parent.width - queueRefresh.width - Style.space(80)); height: 1 }
-
-          Button {
-            id: queueRefresh
-            text: root.service && root.service.queueLoading ? "Loading…" : "Refresh"
-            iconText: "󰑐"
-            foreground: root.foreground
-            enabled: root.service && !root.service.queueLoading
-            onClicked: root.service.loadQueue()
-          }
-        }
-
-        ListView {
-          id: queueList
-          objectName: "page-list"
-          width: parent.width
-          height: Math.max(60, parent.height - Style.space(44))
-          model: queueRoot.visibleItems
-          clip: true
-          spacing: Style.space(3)
-          reuseItems: true
-          cacheBuffer: Style.space(140)
-          keyNavigationEnabled: false
-          highlightFollowsCurrentItem: true
-          activeFocusOnTab: false
-          ScrollBar.vertical: ScrollBar { }
-          Keys.onReturnPressed: function(event) {
-            if (!root.cursorOn("page", "list")) {
-              event.accepted = false
-              return
-            }
-            if (currentItem) currentItem.triggerPrimary()
-            event.accepted = true
-          }
-          Keys.onEnterPressed: function(event) {
-            if (!root.cursorOn("page", "list")) {
-              event.accepted = false
-              return
-            }
-            if (currentItem) currentItem.triggerPrimary()
-            event.accepted = true
-          }
-
-          FastScrollHandler { parent: queueList; flickable: queueList }
-
-          Text {
-            anchors.horizontalCenter: parent.horizontalCenter
-            anchors.top: parent.top
-            anchors.topMargin: Style.space(16)
-            width: Math.max(80, parent.width - Style.space(24))
-            visible: queueList.count === 0
-            text: root.service && root.service.queueLoading
-              ? "Loading the queue…"
-              : (root.queueFilter.trim()
-                ? "No matching songs in the queue."
-                : "Nothing is queued to play next.")
-            color: root.muted
-            font.family: root.fontFamily
-            font.pixelSize: Style.font.body
-            wrapMode: Text.WordWrap
-            horizontalAlignment: Text.AlignHCenter
-          }
-
-          delegate: MediaRow {
-            required property var modelData
-            required property int index
-            itemData: modelData
-            foreground: root.foreground
-            accent: root.accent
-            fontFamily: root.fontFamily
-            selected: ListView.isCurrentItem
-              && root.cursorOn("page", "list")
-            showQueue: false
-            showSave: true
-            artworkEnabled: !root.service || root.service.artworkEnabled
-            saved: root.service && root.service.isSaved(modelData)
-            onActivated: function(item) {
-              root.activateMedia(item, queueRoot.visibleItems, "")
-            }
-            onArtistRequested: function(item) { root.openItem(item) }
-            onAlbumRequested: function(item) { root.openItem(item) }
-            onOpenRequested: function(item) { root.openItem(item) }
-            onPlaylistRequested: function(item) { root.openPlaylistPicker(item) }
-            onSaveRequested: function(item) { if (root.service) root.service.toggleSaved(item) }
-            onContextRequested: function(item, sceneX, sceneY) {
-              root.openMediaContext(item, sceneX, sceneY,
-                queueRoot.visibleItems, "", index)
-            }
-            ShortcutHint {
-              active: hint !== ""
-              navHint: hint
-              readonly property string hint: {
-                queueList.currentIndex
-                queueList.contentY
-                root.panelCursorAction
-                root.panelCursorRegion
-                root.hintCtrlHeld
-                return root.pageListRowHint(index, queueList)
-              }
-            }
-          }
-        }
-      }
-    }
+    QueuePage { controller: root }
   }
 
   Component {

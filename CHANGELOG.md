@@ -1,5 +1,29 @@
 # Changelog
 
+## Desktop experience (unreleased)
+
+- Add bounded Back/Forward history and session restoration, a resizable/collapsible
+  library sidebar, local playlist pins, a Home overview, and optional lazy Queue
+  and Now playing panes.
+- Combine first-page song, artist and album search results; retain category
+  pagination and support pasted Spotify links.
+- Add compact track tables, configurable columns, multi-selection, batch queue,
+  save and playlist actions, drag-to-playlist, and playlist metadata editing.
+  Playlist removal explicitly removes all copies of selected songs.
+- Add event-driven native queue snapshots with visible-row metadata resolution
+  and bounded caching. Hide unsupported native queue editing operations.
+- Bound socket commands and isolate disconnects, stale replies and throwing
+  callbacks; stop batch writes on an uncertain result.
+- Run discovery only while Hidden Gems is visible and release inactive collection
+  metadata at complete page boundaries without losing pagination.
+- Keep large collection metadata outside the ListView model; visible delegates
+  read records by position, including same-length refreshes and sorted views.
+- Create hidden row actions only when shown, keeping compact table density and
+  theme-aware overflow measurements. Compact tables keep Save and duration visible
+  and group secondary actions behind the row menu.
+- Add isolated native interaction, transport, pagination and resource-policy
+  regressions, plus comparative PSS/CPU/feedback/retention performance gates.
+
 ## Hidden Gems fork additions
 
 - Add For you → Hidden gems using Last.fm listening history and artist similarity.

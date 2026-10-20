@@ -43,6 +43,8 @@ Item {
     shortcutHints: "On",
     showLyrics: "On",
     showArtwork: "On",
+    trackDensity: "Compact",
+    trackColumns: "Album + date",
     showTrackTitle: "On",
     showArtistName: "Off",
     showPausedTrack: "On",
@@ -310,7 +312,21 @@ Item {
   readonly property string playlistItemsEmptyMessage: Api.playlistItemsEmptyMessage(
     selectedPlaylist, playlistItems.length, playlistItemsError,
     playlistItemsStatus, currentUserId)
-  property var queue: []
+  readonly property alias queueController: queueOwner
+  QueueController { id: queueOwner; host: root }
+  property alias queue: queueOwner.queue
+  property alias queueLoaded: queueOwner.queueLoaded
+  property alias queueLoading: queueOwner.queueLoading
+  property alias nativeQueueActive: queueOwner.nativeQueueActive
+  property alias queueSource: queueOwner.queueSource
+  property alias queueCanActivate: queueOwner.queueCanActivate
+  property alias queueCanEdit: queueOwner.queueCanEdit
+  property alias queueUnavailableReason: queueOwner.queueUnavailableReason
+  property alias queueContextUri: queueOwner.queueContextUri
+  property alias playbackContextUri: queueOwner.playbackContextUri
+  property alias queueTruncated: queueOwner.queueTruncated
+  property alias queueActionBusy: queueOwner.queueActionBusy
+  property alias queueRevision: queueOwner.queueRevision
   property var devices: []
   property var apiDevices: []
   property string pendingDeviceLoadError: ""
@@ -338,13 +354,31 @@ Item {
   property int savedUrisRevision: 0
   property int savedUrisCheckingRevision: 0
   property int savedUrisBusyRevision: 0
+  property int savedMutationRevision: 0
   readonly property int savedUriCacheLimit: 4096
   readonly property int savedUriFreshnessMs: 300000
 
   readonly property alias discovery: discoveryController
-  DiscoveryController { id: discoveryController; host: root }
+  property var discoverySurfaces: ({})
+  readonly property bool discoveryVisible: Object.keys(discoverySurfaces).length > 0
+  property string selectedHomeTab: "overview"
+  DiscoveryController { id: discoveryController; host: root; active: root.discoveryVisible }
+
+  function setDiscoverySurfaceVisible(key, visible) {
+    var next = Object.assign({}, discoverySurfaces)
+    if (visible) next[String(key)] = true
+    else delete next[String(key)]
+    discoverySurfaces = next
+    if (discoveryVisible) loadHiddenGems(false)
+  }
+
+  function selectHomeTab(tab) {
+    selectedHomeTab = String(tab || "overview")
+    if (selectedHomeTab === "gems" && discoveryVisible) loadHiddenGems(false)
+  }
 
   function loadHiddenGems(force) {
+    if (!discoveryVisible) return
     if (!currentUserId && accountConnected) loadProfile()
     discoveryController.ensure(force)
   }
@@ -420,7 +454,6 @@ Item {
   property bool savedShowsLoaded: false
   property bool savedEpisodesLoaded: false
   property bool savedAudiobooksLoaded: false
-  property bool queueLoaded: false
   property bool devicesLoaded: false
   property bool playlistsLoading: false
   property bool savedTracksLoading: false
@@ -430,7 +463,6 @@ Item {
   property bool savedEpisodesLoading: false
   property bool savedAudiobooksLoading: false
   property bool playlistItemsLoading: false
-  property bool queueLoading: false
   property bool devicesLoading: false
   property alias searchLoading: searchController.searchLoading
   readonly property double searchCooldownUntil: spotifyApi.rateLimitedUntil
@@ -479,6 +511,87 @@ Item {
     || connectAuthManager.loginBusy || connectAuthManager.sessionBusy
 
   readonly property int cacheLimit: 200
+  property string activeLibraryKind: "tracks"
+  property var retainedLibraryPages: ({})
+  property var libraryRestoreTargets: ({})
+  property var retainedPlaylistPage: null
+  property var retainedDetailPage: null
+
+  function retainDetailPage(itemsKey, nextKey, retainedKey) {
+    if (root[itemsKey].length <= cacheLimit)
+      root[retainedKey] = { items: root[itemsKey], next: root[nextKey] }
+  }
+
+  function trimHiddenDetailCollections() {
+    if (uiVisible) return
+    var specs = [
+      ["playlistItems", "playlistItemsNext", "retainedPlaylistPage", "playlistRestoreTargetCount"],
+      ["detailItems", "detailNext", "retainedDetailPage", "detailRestoreTargetCount"]
+    ]
+    specs.forEach(function(spec) {
+      if (root[spec[0]].length <= root.cacheLimit) return
+      var page = root[spec[2]]
+      root[spec[3]] = Math.max(root[spec[3]], root[spec[0]].length)
+      root[spec[0]] = page ? page.items : []
+      root[spec[1]] = page ? page.next : ""
+    })
+  }
+
+  function retainLibraryPage(kind) {
+    var spec = libraryCollectionSpec(kind)
+    var rows = root[spec.items]
+    // Keep a real page boundary so Load more resumes without skipping rows.
+    if (rows.length <= cacheLimit) {
+      var next = Object.assign({}, retainedLibraryPages)
+      next[kind] = { items: rows, next: root[spec.next], loaded: root[spec.loaded] }
+      retainedLibraryPages = next
+    }
+  }
+
+  function trimInactiveLibraryCollections() {
+    var kinds = ["tracks", "albums", "artists", "shows", "episodes", "audiobooks", "playlists"]
+    kinds.forEach(function(kind) {
+      if (root.uiVisible && ((root.activeView === "library" && kind === root.activeLibraryKind)
+          || (root.activeView === "playlists" && kind === "playlists"))) return
+      var spec = root.libraryCollectionSpec(kind)
+      if (root[spec.items].length <= root.cacheLimit) return
+      var page = root.retainedLibraryPages[kind]
+      root[spec.items] = page ? page.items : []
+      root[spec.next] = page ? page.next : ""
+      root[spec.loaded] = page ? page.loaded : false
+    })
+  }
+
+  onActiveViewChanged: {
+    if (activeView !== "library") libraryRestoreTargets = ({})
+    trimInactiveLibraryCollections()
+  }
+
+  function libraryRestorePending(kind) {
+    return Number(libraryRestoreTargets[kind] || 0) > libraryItems(kind).length
+  }
+
+  function ensureLibraryItemCount(kind, count) {
+    var target = Math.min(10000, Math.max(0, Math.floor(Number(count) || 0)))
+    if (!uiVisible || activeView !== "library" || activeLibraryKind !== kind) return false
+    var next = Object.assign({}, libraryRestoreTargets)
+    if (target > libraryItems(kind).length) next[kind] = target
+    else delete next[kind]
+    libraryRestoreTargets = next
+    continueLibraryRestore(kind)
+    return libraryRestorePending(kind)
+  }
+
+  function continueLibraryRestore(kind) {
+    if (!uiVisible || activeView !== "library" || activeLibraryKind !== kind || libraryLoading(kind)) return
+    if (!libraryRestorePending(kind) || !libraryNext(kind)) {
+      var next = Object.assign({}, libraryRestoreTargets)
+      delete next[kind]
+      libraryRestoreTargets = next
+      return
+    }
+    loadLibraryCollection(kind, true)
+  }
 
   signal operationFailed(string reason)
   signal radioPlaylistReady(var playlist)
@@ -512,7 +625,7 @@ Item {
       "showVinylRecord", "shortcutPlayer", "shortcutHints", "showLyrics", "showArtwork", "showTrackTitle", "showArtistName",
       "showPausedTrack", "scrollBarText", "scrollSpeed", "maxBarTextWidth",
       "fixedBarWidth", "audioQuality", "clientId", "lastFmUsername", "lastFmApiKey",
-      "discoveryObscurity", "discoveryAdventure"]
+      "discoveryObscurity", "discoveryAdventure", "trackDensity", "trackColumns"]
     for (var i = 0; i < keys.length; i++) {
       var key = keys[i]
       if (source[key] !== undefined) next[key] = source[key]
@@ -526,6 +639,9 @@ Item {
     next.shortcutHints = Api.normalizedShortcutHints(next.shortcutHints)
     next.showLyrics = String(next.showLyrics || "On") === "Off" ? "Off" : "On"
     next.showArtwork = String(next.showArtwork || "On") === "Off" ? "Off" : "On"
+    next.trackDensity = source.trackDensity === "Comfortable" ? "Comfortable" : "Compact"
+    next.trackColumns = ["Album + date", "Album", "Title only"].indexOf(source.trackColumns) >= 0
+      ? source.trackColumns : "Album + date"
     next.showTrackTitle = String(next.showTrackTitle || "On") === "Off" ? "Off" : "On"
     next.showArtistName = String(next.showArtistName || "Off") === "On" ? "On" : "Off"
     next.showPausedTrack = String(next.showPausedTrack || "On") === "Off" ? "Off" : "On"
@@ -1275,7 +1391,7 @@ Item {
     if (!authManager.loggedIn && !authManager.tokenIsFresh()) return
     if (activeView === "home") {
       if (force || !homeLoaded) loadHome()
-      loadHiddenGems(force)
+      if (selectedHomeTab === "gems") loadHiddenGems(force)
     }
     else if (activeView === "discover" && (force || !discoverLoaded))
       loadDiscover()
@@ -1285,7 +1401,7 @@ Item {
       loadSavedTracks(false)
     else if (activeView === "playlists" && (force || !playlistsLoaded))
       loadPlaylists(false)
-    else if (activeView === "queue" && (force || !queueLoaded))
+    else if (activeView === "queue")
       loadQueue()
     else if (activeView === "devices") {
       loadDevices(null, undefined, true)
@@ -1493,12 +1609,33 @@ Item {
       return
     }
     var expected = serial === undefined ? dataSerial : serial
+    var mutation = savedMutationRevision
     root[spec.loading] = true
     spotifyApi.request("GET", path, append ? null : spec.query, null,
       function(status, payload, error) {
         if (expected !== root.dataSerial) return
         root[spec.loading] = false
-        if (error) root.fail(error)
+        // A library read begun before a confirmed write cannot restore stale rows
+        // or overwrite the newer saved state. Refetch only while a UI is visible.
+        if (mutation !== root.savedMutationRevision) {
+          if (root.uiVisible) root.loadLibraryCollection(kind, false, callback, expected)
+          else {
+            root[spec.items] = []
+            root[spec.next] = ""
+            root[spec.loaded] = false
+            var retained = Object.assign({}, root.retainedLibraryPages)
+            delete retained[kind]
+            root.retainedLibraryPages = retained
+            if (typeof callback === "function") callback()
+          }
+          return
+        }
+        if (error) {
+          var targets = Object.assign({}, root.libraryRestoreTargets)
+          delete targets[kind]
+          root.libraryRestoreTargets = targets
+          root.fail(error)
+        }
         else {
           var mapper = root.libraryMapper(spec.mapper)
           var page = spec.cursor
@@ -1510,6 +1647,9 @@ Item {
           root[spec.items] = items
           root[spec.next] = page.next
           root[spec.loaded] = true
+          root.retainLibraryPage(kind)
+          root.trimInactiveLibraryCollections()
+          root.continueLibraryRestore(kind)
           if (spec.checkSaved === true) root.checkSavedItems(page.items)
           else root.markItemsSaved(page.items, true)
           if (spec.mergeDiscover === true
@@ -1535,6 +1675,7 @@ Item {
   function setSavedState(uri, value) {
     var key = String(uri || "")
     if (!key) return
+    savedMutationRevision++
     rememberSavedStates([key], value === true)
   }
 
@@ -1637,10 +1778,12 @@ Item {
   }
 
   function requestContains(chunk, expected) {
+    var mutation = savedMutationRevision
     spotifyApi.request("GET", "/me/library/contains", { uris: chunk }, null,
       function(status, payload, error) {
         if (expected !== root.dataSerial) return
         root.markSavedUrisChecking(chunk, false)
+        if (mutation !== root.savedMutationRevision) return
         if (error || !Array.isArray(payload)) return
         root.rememberSavedStates(chunk, payload)
       })
@@ -1680,6 +1823,53 @@ Item {
   function toggleCurrentTrackSaved() {
     if (!currentTrackSaveAvailable) return
     toggleSaved(currentTrackItem)
+  }
+
+  function toggleSavedItems(items) {
+    var seen = ({})
+    var rows = (Array.isArray(items) ? items : []).filter(function(item) {
+      if (!item || !item.uri || item.type === "chapter" || seen[item.uri]) return false
+      seen[item.uri] = true
+      return true
+    })
+    if (!rows.length || rows.some(function(item) { return root.isSavedBusy(item) })) return
+    var removing = rows.every(function(item) { return root.isSaved(item) })
+    var expected = dataSerial
+    rows.forEach(function(item) { root.setSavedBusy(item.uri, true) })
+    var completed = 0
+    function finish(error) {
+      if (expected !== root.dataSerial) return
+      rows.forEach(function(item) { root.setSavedBusy(item.uri, false) })
+      // Refresh only the affected, already loaded library categories.
+      var kinds = { track: "tracks", album: "albums", artist: "artists", show: "shows",
+        episode: "episodes", audiobook: "audiobooks", playlist: "playlists" }
+      var refreshed = ({})
+      rows.forEach(function(item) {
+        var kind = kinds[item.type]
+        if (!kind || refreshed[kind]) return
+        refreshed[kind] = true
+        var spec = root.libraryCollectionSpec(kind)
+        if (root[spec.loaded]) root.loadLibraryCollection(kind, false)
+      })
+      if (error) root.fail(completed + " items confirmed. " + error + " Check your library before retrying.")
+      else root.succeed(removing ? "Removed selection from your library" : "Saved selection to your library")
+    }
+    function next() {
+      if (expected !== root.dataSerial) return
+      if (completed >= rows.length) { finish(""); return }
+      var batch = rows.slice(completed, completed + 40)
+      var uris = batch.map(function(item) { return item.uri })
+      spotifyApi.request(removing ? "DELETE" : "PUT", "/me/library", { uris: uris }, null,
+        function(status, payload, error) {
+          if (expected !== root.dataSerial) return
+          if (error) { finish(error); return }
+          root.savedMutationRevision++
+          root.rememberSavedStates(uris, !removing)
+          completed += batch.length
+          next()
+        }, { priority: "interactive", retryRateLimit: false })
+    }
+    next()
   }
 
   function loadSavedAlbums(append) {
@@ -1744,6 +1934,8 @@ Item {
 
   function loadLibrary(kind, append, force) {
     var value = String(kind || "tracks")
+    activeLibraryKind = value
+    trimInactiveLibraryCollections()
     if (append !== true && force !== true && libraryLoaded(value)) return
     loadLibraryCollection(value, append === true)
   }
@@ -1756,6 +1948,7 @@ Item {
     playlistRestoreTargetCount = Api.normalizedPlaylistRestoreCount(
       restoredItemCount)
     selectedPlaylist = playlist
+    retainedPlaylistPage = null
     playlistItems = []
     playlistItemsNext = ""
     playlistItemsError = ""
@@ -1812,10 +2005,12 @@ Item {
           append, page.next)
         root.playlistItems = playlistPage.items
         root.playlistItemsNext = playlistPage.next
-        if (Api.playlistRestoreShouldContinue(root.playlistItems.length,
+        root.retainDetailPage("playlistItems", "playlistItemsNext", "retainedPlaylistPage")
+        root.trimHiddenDetailCollections()
+        if (root.uiVisible && Api.playlistRestoreShouldContinue(root.playlistItems.length,
             root.playlistRestoreTargetCount, root.playlistItemsNext))
           root.loadPlaylistItems(true)
-        else root.playlistRestoreTargetCount = 0
+        else if (root.uiVisible) root.playlistRestoreTargetCount = 0
       })
   }
 
@@ -1834,42 +2029,27 @@ Item {
     else playlistRestoreTargetCount = 0
   }
 
-  function createPlaylist(name, callback) {
-    var normalized = String(name || "").trim()
-    if (!normalized || playlistActionBusy) return
-    playlistActionBusy = true
-    spotifyApi.request("POST", "/me/playlists", null, {
-      name: normalized.slice(0, 100),
-      "public": false,
-      description: "Created with Omarchy Spotify"
-    }, function(status, payload, error) {
-      root.playlistActionBusy = false
-      if (error) { root.fail(error); return }
-      var playlist = Api.normalizePlaylist(payload, 96)
-      if (playlist) {
-        root.playlists = [playlist].concat(root.playlists)
-        root.setSavedState(playlist.uri, true)
-        root.succeed("Playlist created")
-        if (typeof callback === "function") callback(playlist)
-      }
-    })
+  PlaylistActions { id: playlistActions; host: root }
+
+  function createPlaylist(name, callback) { playlistActions.create(name, callback) }
+  function addItemToPlaylist(item, playlist) { playlistActions.writeItems([item], playlist, false) }
+  function addItemsToPlaylist(items, playlist) { playlistActions.writeItems(items, playlist, false) }
+  function updatePlaylistDetails(playlist, name, description) {
+    playlistActions.update(playlist, name, description)
+  }
+  function removePlaylistItems(items, playlist) {
+    playlistActions.writeItems(items, playlist || selectedPlaylist, true)
   }
 
-  function addItemToPlaylist(item, playlist) {
-    if (!item || ["track", "episode"].indexOf(item.type) < 0 || !item.uri
-        || !playlist || !playlist.id
-        || playlistActionBusy) return
-    playlistActionBusy = true
-    spotifyApi.request("POST", "/playlists/" + encodeURIComponent(String(playlist.id)) + "/items",
-      null, { uris: [item.uri] }, function(status, payload, error) {
-        root.playlistActionBusy = false
-        if (error) { root.fail(error); return }
-        root.updatePlaylistSnapshot(playlist.id, payload && payload.snapshot_id)
-        root.succeed("Added to " + String(playlist.name || "playlist"))
-        if (root.selectedPlaylist && root.selectedPlaylist.id === playlist.id)
-          root.loadPlaylistItems(false)
-        if (root.detailItem && root.detailItem.id === playlist.id) root.openDetail(root.detailItem)
-      })
+  function makePlaylistYourOwn(playlist, callback) { playlistActions.makePlaylistYourOwn(playlist, callback) }
+  function requestPlaylistItemReorder(sourceIndex, destinationIndex, playlist, count, sourceItems) {
+    playlistActions.requestPlaylistItemReorder(sourceIndex, destinationIndex, playlist, count, sourceItems)
+  }
+  function reorderPlaylistItem(sourceIndex, destinationIndex, playlist, count, sourceItems) {
+    playlistActions.reorderPlaylistItem(sourceIndex, destinationIndex, playlist, count, sourceItems)
+  }
+  function movePlaylistItem(index, delta, playlist, count) {
+    playlistActions.movePlaylistItem(index, delta, playlist, count)
   }
 
   function registerPlaylistCopy(playlist) {
@@ -1882,116 +2062,10 @@ Item {
     setSavedState(playlist.uri, true)
   }
 
-  function finishPlaylistConversion(error) {
-    playlistConversionBusy = false
-    playlistActionBusy = false
-    statusMessage = ""
-    if (error) fail(error)
-  }
 
-  function collectPlaylistForCopy(playlist, path, collected, expected, callback) {
-    var first = !path
-    var requestPath = path || "/playlists/" + encodeURIComponent(String(playlist.id)) + "/items"
-    spotifyApi.request("GET", requestPath, first ? { limit: 50 } : null, null,
-      function(status, payload, error) {
-        if (expected !== root.dataSerial) return
-        if (error) { callback([], error); return }
-        if (!payload || !Array.isArray(payload.items)) {
-          callback([], "Spotify does not make this playlist's songs available to copy. The original was left untouched.")
-          return
-        }
-        var page = Api.normalizePage(payload, function(value) {
-          return Api.normalizeTrack(value, 96)
-        })
-        var combined = collected.concat(page.items)
-        if (page.next && combined.length < 10000) {
-          root.collectPlaylistForCopy(playlist, page.next, combined, expected, callback)
-          return
-        }
-        if (page.next) {
-          callback([], "This playlist is too large to copy safely")
-          return
-        }
-        callback(combined, "")
-      })
-  }
 
-  function addPlaylistCopyBatches(playlist, uris, offset, expected, callback) {
-    if (expected !== dataSerial) return
-    if (offset >= uris.length) { callback(""); return }
-    var batch = uris.slice(offset, Math.min(offset + 100, uris.length))
-    spotifyApi.request("POST", "/playlists/" + encodeURIComponent(String(playlist.id)) + "/items",
-      null, { uris: batch }, function(status, payload, error) {
-        if (expected !== root.dataSerial) return
-        if (error) { callback(error); return }
-        root.updatePlaylistSnapshot(playlist.id, payload && payload.snapshot_id)
-        root.addPlaylistCopyBatches(playlist, uris, offset + batch.length, expected, callback)
-      })
-  }
 
-  function removeOriginalAfterCopy(original, copy, expected, callback) {
-    spotifyApi.request("DELETE", "/me/library", { uris: original.uri }, null,
-      function(status, payload, error) {
-        if (expected !== root.dataSerial) return
-        if (error) {
-          root.finishPlaylistConversion("Your copy is ready, but Spotify could not remove the original from your library")
-          return
-        }
-        var next = []
-        for (var i = 0; i < root.playlists.length; i++) {
-          var candidate = root.playlists[i]
-          if (String(candidate.id || "") !== String(original.id || "")) next.push(candidate)
-        }
-        root.playlists = next
-        root.setSavedState(original.uri, false)
-        root.finishPlaylistConversion("")
-        root.succeed("Your playlist is ready")
-        if (typeof callback === "function") callback(copy)
-      })
-  }
 
-  function makePlaylistYourOwn(playlist, callback) {
-    if (!playlist || playlist.type !== "playlist" || !playlist.id || !playlist.uri
-        || playlistOwned(playlist) || playlistActionBusy || !currentUserId) return
-    var expected = dataSerial
-    playlistActionBusy = true
-    playlistConversionBusy = true
-    lastError = ""
-    statusClearTimer.stop()
-    statusMessage = "Reading " + String(playlist.name || "playlist") + "…"
-    collectPlaylistForCopy(playlist, "", [], expected, function(items, readError) {
-      if (readError) { root.finishPlaylistConversion(readError); return }
-      var uris = Api.playlistItemUris(items)
-      if (Number(playlist.total || 0) > 0 && uris.length === 0) {
-        root.finishPlaylistConversion("Spotify does not make this playlist's songs available to copy. The original was left untouched.")
-        return
-      }
-      root.statusMessage = "Creating your playlist…"
-      spotifyApi.request("POST", "/me/playlists", null, {
-        name: String(playlist.name || "My playlist").slice(0, 100),
-        "public": false,
-        description: "Your copy, created with Omarchy Spotify"
-      }, function(status, payload, createError) {
-        if (expected !== root.dataSerial) return
-        if (createError) { root.finishPlaylistConversion(createError); return }
-        var copy = Api.normalizePlaylist(payload, 96)
-        if (!copy) {
-          root.finishPlaylistConversion("Spotify created the playlist, but it could not be opened")
-          return
-        }
-        root.registerPlaylistCopy(copy)
-        root.statusMessage = "Copying " + uris.length + (uris.length === 1 ? " item…" : " items…")
-        root.addPlaylistCopyBatches(copy, uris, 0, expected, function(copyError) {
-          if (copyError) {
-            root.finishPlaylistConversion("The new playlist was created, but Spotify stopped before every item was copied. The original was kept.")
-            return
-          }
-          root.statusMessage = "Removing the original from your library…"
-          root.removeOriginalAfterCopy(playlist, copy, expected, callback)
-        })
-      })
-    })
-  }
 
   function reloadPlaylist(playlist) {
     if (!playlist) return
@@ -2012,87 +2086,11 @@ Item {
   }
 
   function removePlaylistItem(item, index, playlist) {
-    var target = playlist || selectedPlaylist
-    if (!item || !item.uri || !playlistEditable(target) || playlistActionBusy) return
-    playlistActionBusy = true
-    var body = { items: [{ uri: item.uri }] }
-    if (target.snapshotId) body.snapshot_id = target.snapshotId
-    spotifyApi.request("DELETE", "/playlists/" + encodeURIComponent(String(target.id)) + "/items",
-      null, body, function(status, payload, error) {
-        root.playlistActionBusy = false
-        if (error) { root.fail(error); return }
-        root.updatePlaylistSnapshot(target.id, payload && payload.snapshot_id)
-        root.succeed("Removed from playlist")
-        root.reloadPlaylist(target)
-      })
+    removePlaylistItems([item], playlist)
   }
 
-  function requestPlaylistItemReorder(sourceIndex, destinationIndex, playlist, count,
-      sourceItems) {
-    var target = playlist || selectedPlaylist
-    if (!playlistEditable(target) || playlistActionBusy) return
-    var length = Math.max(0, Math.floor(Number(count) || playlistItems.length))
-    var playlistId = String(target.id || "")
-    var selectedMatches = selectedPlaylist
-      && String(selectedPlaylist.id || "") === playlistId
-    var detailMatches = detailItem && detailItem.type === "playlist"
-      && String(detailItem.id || "") === playlistId
-    var orderingItems = Array.isArray(sourceItems) ? sourceItems
-      : (selectedMatches ? playlistItems : (detailMatches ? detailItems : []))
-    var body = orderingItems.length
-      ? Api.playlistReorderBodyForItems(orderingItems, sourceIndex,
-        destinationIndex, Math.max(length, Number(target.total) || 0),
-        target.snapshotId)
-      : Api.playlistReorderBody(sourceIndex, destinationIndex, length,
-        target ? target.snapshotId : "")
-    if (!body) return
 
-    var sourcePosition = orderingItems.length
-      ? Api.playlistPositionAt(orderingItems, sourceIndex) : sourceIndex
-    var destinationPosition = orderingItems.length
-      ? Api.playlistPositionAt(orderingItems, destinationIndex) : destinationIndex
-    var previousPlaylistItems = playlistItems
-    var previousDetailItems = detailItems
-    if (selectedMatches)
-      playlistItems = Api.reorderedPlaylistItemsAtPositions(playlistItems,
-        sourcePosition, destinationPosition)
-    if (detailMatches)
-      detailItems = Api.reorderedPlaylistItemsAtPositions(detailItems,
-        sourcePosition, destinationPosition)
 
-    playlistActionBusy = true
-    spotifyApi.request("PUT", "/playlists/" + encodeURIComponent(String(target.id)) + "/items",
-      null, body, function(status, payload, error) {
-        root.playlistActionBusy = false
-        if (error) {
-          if (selectedMatches && root.selectedPlaylist
-              && String(root.selectedPlaylist.id || "") === playlistId)
-            root.playlistItems = previousPlaylistItems
-          if (detailMatches && root.detailItem && root.detailItem.type === "playlist"
-              && String(root.detailItem.id || "") === playlistId)
-            root.detailItems = previousDetailItems
-          root.fail(error)
-          return
-        }
-        root.updatePlaylistSnapshot(target.id, payload && payload.snapshot_id)
-        root.succeed("Playlist order updated")
-      })
-  }
-
-  function reorderPlaylistItem(sourceIndex, destinationIndex, playlist, count,
-      sourceItems) {
-    var target = playlist || selectedPlaylist
-    if (!playlistOwned(target)) return
-    requestPlaylistItemReorder(sourceIndex, destinationIndex, target, count,
-      sourceItems)
-  }
-
-  function movePlaylistItem(index, delta, playlist, count) {
-    var source = Math.max(0, Math.floor(Number(index) || 0))
-    var direction = Number(delta || 0) < 0 ? -1 : 1
-    requestPlaylistItemReorder(source, source + direction,
-      playlist || selectedPlaylist, count)
-  }
 
   function detailPageFromPayload(payload, type, parent) {
     var container = payload || {}
@@ -2122,6 +2120,7 @@ Item {
     detailRestoreTargetCount = type === "playlist"
       ? Api.normalizedPlaylistRestoreCount(restoredItemCount) : 0
     detailItem = item
+    retainedDetailPage = null
     detailItems = []
     detailNext = ""
     detailMessage = ""
@@ -2164,12 +2163,14 @@ Item {
       var page = root.detailPageFromPayload(payload, type, parent)
       root.detailItems = page.items
       root.detailNext = page.next
+      root.retainDetailPage("detailItems", "detailNext", "retainedDetailPage")
+      root.trimHiddenDetailCollections()
       root.detailLoading = false
       root.checkSavedItems(root.detailItems)
-      if (type === "playlist" && Api.playlistRestoreShouldContinue(
+      if (root.uiVisible && type === "playlist" && Api.playlistRestoreShouldContinue(
           root.detailItems.length, root.detailRestoreTargetCount,
           root.detailNext)) root.loadMoreDetail()
-      else root.detailRestoreTargetCount = 0
+      else if (root.uiVisible) root.detailRestoreTargetCount = 0
       if (type === "playlist" && !payload.items && !payload.tracks)
         root.detailMessage = Api.playlistItemsHiddenMessage()
     })
@@ -2343,11 +2344,13 @@ Item {
         ? root.detailItems.concat(page.items)
         : Api.mergeUnique(root.detailItems, page.items))
       root.detailNext = page.next
+      root.retainDetailPage("detailItems", "detailNext", "retainedDetailPage")
+      root.trimHiddenDetailCollections()
       root.checkSavedItems(page.items)
-      if (type === "playlist" && Api.playlistRestoreShouldContinue(
+      if (root.uiVisible && type === "playlist" && Api.playlistRestoreShouldContinue(
           root.detailItems.length, root.detailRestoreTargetCount,
           root.detailNext)) root.loadMoreDetail()
-      else root.detailRestoreTargetCount = 0
+      else if (root.uiVisible) root.detailRestoreTargetCount = 0
     })
   }
 
@@ -2743,36 +2746,16 @@ Item {
       })
   }
 
-  function loadQueue(callback, serial) {
-    if (queueLoading) {
-      if (typeof callback === "function") callback()
-      return
-    }
-    var expected = serial === undefined ? dataSerial : serial
-    queueLoading = true
-    spotifyApi.request("GET", "/me/player/queue", null, null,
-      function(status, payload, error) {
-        if (expected !== root.dataSerial) return
-        root.queueLoading = false
-        if (error) root.fail(error)
-        else {
-          var source = payload && Array.isArray(payload.queue) ? payload.queue : []
-          var next = []
-          for (var i = 0; i < source.length && next.length < 100; i++) {
-            var track = Api.normalizeTrack(source[i], 96)
-            if (track) next.push(track)
-          }
-          root.queue = next
-          root.queueLoaded = true
-        }
-        if (typeof callback === "function") callback()
-      })
-  }
+  function activateQueueItem(item) { queueOwner.activateQueueItem(item) }
+  function loadQueue(callback, serial) { queueOwner.loadQueue(callback, serial) }
+  function renderNativeQueue() { queueOwner.renderNativeQueue() }
+  function setQueueVisibleItems(surfaceId, items) { queueOwner.setQueueVisibleItems(surfaceId, items) }
 
   SearchController {
     id: searchController
     api: spotifyApi
     dataSerial: root.dataSerial
+    active: root.uiVisible
     onRememberSearch: term => root.rememberSearch(term)
     onCheckSavedItems: items => root.checkSavedItems(items)
   }
@@ -2819,6 +2802,9 @@ Item {
   function search(term, type, force) { return searchController.search(term, type, force) }
   function searchItems(type) { return searchController.searchItems(type) }
   function searchNext(type) { return searchController.searchNext(type) }
+  function searchAll(term, force) { searchController.searchAll(term, force) }
+  function ensureSearchItemCount(query, type, count) { return searchController.ensureItemCount(query, type, count) }
+  function searchRestorePending(query, type) { return searchController.restorePending(query, type) }
   function loadMoreSearch(type) { return searchController.loadMoreSearch(type) }
   function retrySearch(type) { return searchController.retrySearch(type) }
   function clearSearch() { return searchController.clearSearch() }
@@ -3032,15 +3018,21 @@ Item {
     var body = pendingPlaybackBody
     var successMessage = pendingPlaybackMessage
     var radioPlaylist = pendingPlaybackRadio
+    var account = dataSerial
     clearPendingPlayback()
     localSocketWaitTimer.stop()
-    backendClient.loadPlayback(body, function(ok, result, error) {
+    backendClient.loadPlayback(body, function(ok, result, error, outcomeUnknown) {
+      if (account !== root.dataSerial || playbackSerial !== root.radioSerial) return
       if (ok) {
         if (playbackSerial === root.radioSerial)
           root.radioContextSelected = !!radioPlaylist
         if (successMessage) root.succeed(successMessage)
         root.loadQueue()
         root.loadPlaybackState()
+        return
+      }
+      if (outcomeUnknown) {
+        root.fail(error || "The playback command outcome is unknown. Check playback before trying again")
         return
       }
       root.pendingPlaybackBody = body
@@ -3525,26 +3517,8 @@ Item {
     return "Sleep timer"
   }
 
-  function addToQueue(item) {
-    if (!item || ["track", "episode"].indexOf(item.type) < 0 || !item.uri) {
-      fail("Only tracks and episodes can be added to the queue")
-      return
-    }
-    if (!useRemotePlayback && backendClient.ready) {
-      backendClient.sendCommand("add_to_queue", { uri: item.uri },
-        function(ok, result, error) {
-          if (ok) {
-            root.succeed("Added to queue")
-            root.loadQueue()
-          } else root.fail(error || "Could not add that item to the queue")
-        })
-      return
-    }
-    apiAction("POST", "/me/player/queue", {
-      uri: item.uri,
-      device_id: controlDeviceId() || undefined
-    }, null, "Added to queue", function(ok) { if (ok) root.loadQueue() })
-  }
+  function addToQueue(item, callback) { queueOwner.addToQueue(item, callback) }
+  function addItemsToQueue(items, callback) { queueOwner.addItemsToQueue(items, callback) }
 
   function startEngine() {
     localPlaybackStopped = false
@@ -3644,6 +3618,10 @@ Item {
     playlists = []
     playlistsLoaded = false
     playlistsNext = ""
+    retainedLibraryPages = ({})
+    libraryRestoreTargets = ({})
+    retainedPlaylistPage = null
+    retainedDetailPage = null
     savedTracks = []
     savedTracksLoaded = false
     savedTracksNext = ""
@@ -3670,8 +3648,7 @@ Item {
     selectedPlaylist = null
     currentUserId = ""
     currentUserName = ""
-    queue = []
-    queueLoaded = false
+    queueOwner.reset()
     devices = []
     apiDevices = []
     remotePlayback = null
@@ -3751,7 +3728,6 @@ Item {
     playlistItemsLoading = false
     playlistActionBusy = false
     playlistConversionBusy = false
-    queueLoading = false
     devicesLoading = false
     deviceLoadWaiters = []
     pendingDeviceDiscover = false
@@ -3780,7 +3756,12 @@ Item {
       syncCurrentTrackSaved(true)
       updateSleepCountdown()
     }
-    else cancelVisibleLocalDeviceRefresh()
+    else {
+      libraryRestoreTargets = ({})
+      cancelVisibleLocalDeviceRefresh()
+      trimInactiveLibraryCollections()
+      trimHiddenDetailCollections()
+    }
   }
   onFullyConnectedChanged: {
     if (fullyConnected && uiVisible) ensureVisibleLocalReceiver()

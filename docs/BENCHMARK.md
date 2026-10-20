@@ -1,5 +1,10 @@
 # Resource benchmark
 
+The live measurements below are historical. They have not been repeated for
+the desktop-parity branch. Its isolated comparisons use the separate
+[performance policy](PERFORMANCE_POLICY.md); metadata fixtures do not establish
+current live-audio or artwork costs.
+
 Measured on 2026-08-12 on Omarchy 4 (`4.0.0.r1658.g0820484`),
 Quickshell `0.3.0.r20.g28771c7`, Qt 6.11.1, and Linux 7.1.5. The host has an
 Intel Core Ultra X7 358H, 31.0 GiB RAM, and a 3200×2000 display at 120 Hz and
@@ -30,8 +35,9 @@ the existing Omarchy shell:
   normal desktop noise in this short sample.
 
 The open-window sample was logged in on Discover with personalized rows and
-artwork loaded. Loaded rows remain bounded to 200 per view, delegates are
-recycled, and list artwork pixmaps are released with those delegates.
+artwork loaded. Delegates are recycled and list artwork pixmaps are released with those
+delegates. Manual pagination can exceed 200 visible rows; inactive metadata
+retention now uses exact page checkpoints (see PERFORMANCE_POLICY.md).
 
 ## Official Spotify comparison
 
@@ -120,10 +126,13 @@ changes PID during the 10-second window.
 ## Method
 
 `scripts/benchmark.sh` identifies exactly one Omarchy Quickshell process and
-the plugin backend or all spotifyd processes at sample start.
+the plugin backend or all spotifyd processes. It validates that complete
+process set and every PID start identity before and after sampling and after
+reading memory.
 `scripts/benchmark-spotify-desktop.sh`
 includes every process whose executable resolves to `/opt/spotify/spotify` and
-rejects a sample if that process set changes during the window. Both scripts
+applies the same process-set/start-identity checks. Both scripts reject missing
+or unreadable required counters instead of substituting zero. Both scripts
 read:
 
 - PSS and RSS from `/proc/PID/smaps_rollup` at the end of the window;
@@ -207,3 +216,18 @@ libraries already present on Omarchy. For scale only, the installed proprietary
 Spotify desktop package on the same host reports 368.51 MiB. Disk footprint is
 not a substitute for runtime measurement, but it illustrates why the plugin
 avoids shipping a browser runtime.
+
+
+## Candidate regression gates
+
+The executable isolated native comparison is `scripts/benchmark-compare.py`.
+See [PERFORMANCE_POLICY.md](PERFORMANCE_POLICY.md) for budgets, 1k/10k fixtures,
+closed/full/mini/navigation cases, and the distinction between offscreen fixture
+measurements and the historical live-shell results above. New harness smoke
+checks do not establish that an integrated candidate passes the release gates.
+
+
+The 19 October desktop parity candidate passed all ten release-parameter cases.
+See the [exact source, raw reports and limits](performance/2026-10-19-desktop-parity/README.md).
+The 10k full-view metadata fixture uses 76.8 MiB less PSS than main `68c50c0`;
+this is separate from the historical live-shell/audio measurements above.

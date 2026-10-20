@@ -1,5 +1,46 @@
 # Implementation status
 
+## Desktop parity update, 19 October 2026
+
+The `feat/spotify-desktop-experience` branch starts from main `68c50c0`. It adds
+Back/Forward and bounded session routes, local playlist pins, a resizable sidebar,
+lazy listening panes, mixed search, compact selectable song tables, batch library
+and playlist actions, and playlist metadata editing. Native queue snapshots are
+event-driven, with visible-row metadata and a 200-entry metadata cache. Native
+queue jump/reorder/remove remain unavailable because the receiver does not expose
+safe operations for them. Spotify API restrictions still apply to remote actions.
+
+Discovery runs only while Gems is visible. Library, selected-playlist and generic
+detail buffers release surplus metadata at complete page boundaries. Existing
+per-query search results and artist catalog buffers are separate retained caches;
+the collection policy does not claim to bound them. See
+[PERFORMANCE_POLICY.md](PERFORMANCE_POLICY.md) for exact gates and fixture limits.
+No browser engine, background library index, new service or runtime dependency is
+added. Omasing, Omarchy themes and the native playback path remain in place.
+
+Validation on this branch passes Rust formatting, 26 tests and Clippy, plugin
+validation and qmllint, 249 QML tests, 19 Python helper tests, installer checks,
+five socket cases, four sampler tests, and isolated Quickshell regressions. Native
+QtTest events verify click-to-Enter, Shift selection and dragging two selected
+tracks into a playlist; native checks also verify lazy row-action creation,
+geometry and action dispatch. Fixtures cover loading/errors, narrow layout and
+queue viewport boundaries. All helpers, runtime directories and DBus sessions
+are isolated from the live account and playback backend.
+
+All ten release-parameter performance cases pass against main `68c50c0`. The
+10k full view uses 76.8 MiB less PSS; both navigation sizes pass feedback,
+event-loop lag and retention-growth gates. Exact source hashes, raw samples,
+earlier failures and limits are in the
+[performance evidence](performance/2026-10-19-desktop-parity/README.md).
+
+These screenshots use fictional metadata with artwork disabled and a test theme:
+[library selection](screenshots/desktop-parity/library-selection.png) and
+[mixed search](screenshots/desktop-parity/mixed-search.png).
+
+This update is a PR, not a deployment or versioned release. The installation and
+measurements below describe the September implementation and are historical.
+
+
 Local 1.0.4 implementation, 7 September 2026. This is an implementation and
 validation record, not a claim that the corresponding GitHub issues are closed
 or that a release has been published. The complete reviewed inventory remains
@@ -56,7 +97,7 @@ Personal-client documentation follows [quota modes](https://developer.spotify.co
   existing explicit backend error, not a promise of a Spotify-side fix.
 - #37 exact reconnect-context recovery needs the upstream snapshot contract.
   Ownership activation does not restore a lost queue or shuffle context.
-- #26 configurable columns, #59 queue launcher, #50 built-in lyrics/zoom, and
+- At the September snapshot: #26 configurable columns, #59 queue launcher, #50 built-in lyrics/zoom, and
   managed Soloist support remain separate optional work. Omasing stays the
   default. No Soloist client/key was provisioned or lossless quality claimed.
 - #13 recommendation feedback remains deferred as specified in the plan.

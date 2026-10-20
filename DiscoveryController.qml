@@ -21,6 +21,7 @@ Item {
   property bool storageEnabled: true
   property bool directoryReady: false
   property bool storeReady: false
+  property bool active: true
   property bool requested: false
   property bool forceRequested: false
   property bool loading: false
@@ -69,6 +70,15 @@ Item {
   readonly property alias provider: lastFm
   LastFmAudience { id: audience; api: lastFm; now: root.now }
   readonly property alias audienceProvider: audience
+
+  onActiveChanged: {
+    if (!active) {
+      requested = false
+      forceRequested = false
+      cancel()
+      clearWorkingData()
+    }
+  }
 
   onScopeChanged: reset(true)
   onApiKeyChanged: {
@@ -167,6 +177,7 @@ Item {
   }
 
   function ensure(force) {
+    if (!active) return
     requested = true
     forceRequested = forceRequested || !!force
     if (setupMessage) { message = setupMessage; return }

@@ -15,7 +15,7 @@ TestCase {
     function cancelSearch() {}
     function abortRequest(handle) { if (handle) handle.aborted = true }
     function request(method, path, query, body, callback) {
-      var handle = {path: path, callback: callback, aborted: false}
+      var handle = {path: path, query: query, callback: callback, aborted: false}
       testCase.calls.push(handle)
       return handle
     }
@@ -71,5 +71,79 @@ TestCase {
     verify(calls[2].aborted)
     compare(state.searchQuery, "")
     verify(!state.searchLoading)
+  }
+  function test_overviewLoadsOnlyThreeFirstPagesAndReusesResults() {
+    var state = createTemporaryObject(controller, testCase)
+    state.searchAll("hello")
+    compare(calls.length, 3)
+    compare(calls[0].query.type, "track")
+    compare(calls[0].query.limit, 10)
+    calls.forEach(function(call) { call.callback(200, {}, "") })
+    verify(!state.searchLoading)
+    state.searchAll("hello")
+    compare(calls.length, 3)
+    state.search("hello", "track")
+    compare(calls.length, 3)
+  }
+  function test_overviewCancelsAllRequestsAndIgnoresOldAccount() {
+    var state = createTemporaryObject(controller, testCase)
+    state.search("first", "all")
+    var old = calls.slice()
+    state.search("second", "all")
+    old.forEach(function(call) {
+      verify(call.aborted)
+      call.callback(500, null, "stale error")
+    })
+    compare(state.searchQuery, "second")
+    compare(state.searchError, "")
+    state.dataSerial++
+    calls.slice(3).forEach(function(call) { verify(call.aborted) })
+    verify(!state.searchLoading)
+  }
+  function test_overviewRetriesOnlyFailedCategories() {
+    var state = createTemporaryObject(controller, testCase)
+    state.searchAll("hello")
+    calls[0].callback(200, {}, "")
+    calls[1].callback(500, null, "failed")
+    calls[2].callback(200, {}, "")
+    compare(state.searchError, "failed")
+    state.retrySearch("all")
+    compare(calls.length, 4)
+    compare(calls[3].query.type, "artist")
+    calls[3].callback(200, {}, "")
+    compare(state.searchError, "")
+  }
+  function test_forcedOverviewReplacesOldFirstPage() {
+    var state = createTemporaryObject(controller, testCase)
+    state.searchAll("hello")
+    calls[0].callback(200, { tracks: { items: [{ type: "track", id: "old", uri: "spotify:track:old", name: "old" }] } }, "")
+    calls[1].callback(200, {}, "")
+    calls[2].callback(200, {}, "")
+    compare(state.searchItems("track").length, 1)
+    state.searchAll("hello", true)
+    calls[3].callback(200, { tracks: { items: [] } }, "")
+    calls[4].callback(200, {}, "")
+    calls[5].callback(200, {}, "")
+    compare(state.searchItems("track").length, 0)
+    verify(state.searchLoadedTypes.all)
+  }
+  function test_restoreLoadsUntilTargetAndCancelsWhenHidden() {
+    var state = createTemporaryObject(controller, testCase)
+    state.search("restore", "track")
+    verify(state.ensureItemCount("restore", "track", 3))
+    calls[0].callback(result("track", [{ id: "1", uri: "spotify:track:1" }], "/next1"), "")
+    compare(calls.length, 2)
+    calls[1].callback(200, { tracks: { items: [{ type: "track", id: "2", uri: "spotify:track:2" }], next: "/next2" } }, "")
+    compare(calls.length, 3)
+    calls[2].callback(200, { tracks: { items: [{ type: "track", id: "3", uri: "spotify:track:3" }] } }, "")
+    verify(!state.restorePending("restore", "track"))
+    compare(state.searchItems("track").length, 3)
+    state.search("hidden", "track")
+    state.ensureItemCount("hidden", "track", 10)
+    var pending = calls[calls.length - 1]
+    state.active = false
+    pending.callback(result("track", [], "/hidden-next"), "")
+    verify(!state.searchLoading)
+    verify(!state.restorePending("hidden", "track"))
   }
 }

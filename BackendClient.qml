@@ -25,31 +25,44 @@ Item {
   property int nextId: 1
   property var pending: ({})
   property int reconnectAttempt: 0
+  property bool protocolReady: false
+  property var capabilities: ({})
+  property var lastQueue: null
+  property int requestTimeoutMs: 5000
+  readonly property int pendingCount: Object.keys(pending).length
 
   readonly property string socketPath: {
     var runtime = Quickshell.env("XDG_RUNTIME_DIR")
     return String(runtime || "/tmp") + "/omarchy-spotify/backend.sock"
   }
-  readonly property bool ready: connected
+  readonly property bool ready: connected && protocolReady
     && (lifecycle === "ready" || lifecycle === "")
 
   signal stateReceived(var state)
+  signal queueReceived(var queue)
 
   function resetPending(reason) {
     var waiters = pending
     pending = ({})
     var message = String(reason || "Playback on this computer is unavailable")
     for (var id in waiters) {
-      var callback = waiters[id]
-      if (typeof callback === "function") callback(false, null, message)
+      var callback = waiters[id].callback
+      if (typeof callback === "function") {
+        try { callback(false, null, message, true) }
+        catch (error) { /* consumers own callback errors */ }
+      }
     }
   }
 
   function sendCommand(name, fields, callback) {
     var socket = activeSocket
-    if (!socket || !socket.connected) {
+    if (!socket || !socket.connected || (name !== "hello" && !protocolReady)) {
       if (typeof callback === "function")
-        callback(false, null, "Playback on this computer is not ready")
+        callback(false, null, "Playback on this computer is not ready", false)
+      return 0
+    }
+    if (pendingCount >= 128) {
+      if (typeof callback === "function") callback(false, null, "Playback is busy", false)
       return 0
     }
     var id = nextId++
@@ -57,7 +70,7 @@ Item {
     Api.assign(payload, fields || {})
     var nextPending = ({})
     for (var existing in pending) nextPending[existing] = pending[existing]
-    nextPending[String(id)] = typeof callback === "function" ? callback : null
+    nextPending[String(id)] = { callback: callback, deadline: Date.now() + requestTimeoutMs }
     pending = nextPending
     socket.write(JSON.stringify(payload) + "\n")
     socket.flush()
@@ -74,9 +87,39 @@ Item {
     return sendCommand("load", fields, callback)
   }
 
-  function handleLine(line) {
+  function expirePending(now) {
+    var expired = []
+    var next = ({})
+    for (var id in pending) {
+      if (pending[id].deadline <= now) expired.push(pending[id])
+      else next[id] = pending[id]
+    }
+    if (!expired.length) return
+    pending = next
+    for (var i = 0; i < expired.length; i++) {
+      var callback = expired[i].callback
+      if (typeof callback === "function") {
+        try { callback(false, null, "Playback command timed out; its outcome is unknown", true) }
+        catch (error) { /* consumers own callback errors */ }
+      }
+    }
+  }
+
+  function handleLine(line, source) {
+    if (source && source !== activeSocket) return
     var message = Api.parseJson(line, null)
     if (!message || typeof message !== "object") return
+    if (message.v !== 1 || (message.state && message.state.protocol_version !== 1)) {
+      protocolReady = false
+      errorMessage = "This playback backend uses an unsupported protocol version"
+      resetPending(errorMessage)
+      return
+    }
+    if (message.type === "event" && message.event === "queue_changed") {
+      lastQueue = message.queue || null
+      queueReceived(lastQueue)
+      return
+    }
     if (message.type === "event" && message.state) {
       lastState = message.state
       lifecycle = String(message.state.lifecycle || "")
@@ -88,8 +131,9 @@ Item {
     }
     if (message.type !== "response") return
     var id = String(message.id || "")
-    var callback = pending[id]
-    if (callback === undefined) return
+    var entry = pending[id]
+    if (entry === undefined) return
+    var callback = entry.callback
     var nextPending = ({})
     for (var key in pending) if (key !== id) nextPending[key] = pending[key]
     pending = nextPending
@@ -111,25 +155,52 @@ Item {
     errorCode = ""
     errorMessage = ""
     lastState = null
+    lastQueue = null
+    protocolReady = false
+    capabilities = ({})
     reconnectAttempt = 0
     resetPending("Playback on this computer stopped")
   }
 
-  onConnectedChanged: if (connected) reconnectAttempt = 0
+  onConnectedChanged: {
+    protocolReady = false
+    capabilities = ({})
+    if (!connected) {
+      lifecycle = ""
+      sessionConnected = false
+      lastState = null
+      lastQueue = null
+      resetPending("Playback disconnected; the command outcome is unknown")
+      return
+    }
+    reconnectAttempt = 0
+    sendCommand("hello", null, function(ok, result, error) {
+      root.capabilities = ok && result && result.protocol_version === 1
+        ? (result.capabilities || ({})) : ({})
+      root.protocolReady = ok && result && result.protocol_version === 1
+      if (!root.protocolReady) root.errorMessage = error || "Unsupported playback protocol"
+    })
+  }
+
+  // No watchdog work when there are no outstanding requests.
+  Timer {
+    interval: 250
+    repeat: true
+    running: root.pendingCount > 0
+    onTriggered: root.expirePending(Date.now())
+  }
 
   Component {
     id: socketComponent
     Socket {
+      id: liveSocket
       path: root.socketPath
       connected: true
       parser: SplitParser {
         splitMarker: "\n"
-        onRead: function(line) { root.handleLine(line) }
+        onRead: function(line) { root.handleLine(line, liveSocket) }
       }
-      onConnectionStateChanged: {
-        if (connected) root.sendCommand("hello", null, null)
-        else root.lifecycle = ""
-      }
+
     }
   }
 

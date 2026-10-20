@@ -1588,9 +1588,8 @@ function radioSeedMatches(candidate, seed) {
 
 function discoveryPlaylistRank(item) {
   if (!item || item.type !== "playlist" || !item.id) return -1
-  var ownerId = String(item.ownerId || "").toLowerCase()
-  var ownerName = String(item.ownerName || "").toLowerCase()
-  if (ownerId !== "spotify" && ownerName !== "spotify") return -1
+  var ownerId = String(item.ownerId || "")
+  if (ownerId !== "spotify") return -1
   var title = comparablePlaylistTitle(item.name)
   if (title === "discover weekly") return 0
   if (title === "release radar") return 1

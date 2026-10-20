@@ -1,0 +1,157 @@
+# Performance policy
+
+Performance is a release constraint. Compare the candidate with the base revision
+using the same native fixture, Qt/Quickshell build, display backend, machine,
+row count and settle period. Do not compare an isolated fixture's absolute memory
+with the incremental live-shell figures in BENCHMARK.md.
+
+The gates are:
+
+- Closed: candidate median PSS at most 2 MiB above base.
+- Same populated full view: candidate median PSS at most 5 MiB above base.
+- Hidden CPU and scheduler activity: investigate any repeatable increase. The
+  executable screening thresholds are 0.1 CPU percentage points and 2 context
+  switches/s to accommodate counter resolution/noise. These are not energy units.
+- Local control feedback: p95 at most 100 ms. The fixture measures a cursor/control
+  property update through the next QML event-loop turn. It does not measure OS
+  input dispatch, compositor presentation, network response or artwork completion.
+- QML event-loop lag: p95 at most 100 ms across at least 20 visible-state timer
+  callbacks. This measures missed 100-ms scheduling deadlines, separately from
+  cursor/control handler time, so a busy UI loop cannot pass merely because its
+  handler runs quickly once dispatched. It still excludes compositor latency.
+- Navigation cache plateau: after a warm navigation round, settled candidate PSS
+  must grow by no more than 1 MiB over subsequent identical rounds. A failure
+  requires investigation and a quiet repeat; it is not silently waived.
+
+Use three 10-second samples after at least 20 seconds of settling for a release
+comparison. Two 2-second samples are only harness smoke checks. Stop unrelated
+builds/tests and heavy applications before the release run. Keep failed raw logs
+and reports, and distinguish an incomplete matrix from a passing one.
+
+## Discovery lifetime
+
+Home's overview and cached Gems do not schedule a cold Last.fm pipeline. Only a
+visible Gems surface calls `setDiscoverySurfaceVisible(id, true)`. The last
+surface closing aborts Last.fm/Spotify discovery requests, stops paced work and
+releases pipeline intermediates. This does not stop native playback or remote
+playback monitoring. Fresh persisted recommendations remain immediately usable.
+
+The controller is active by default for direct consumers; Service binds it to
+Gems visibility. A refresh while no Gems surface is visible is ignored. Settings
+changes while hidden do not restart discovery. Last.fm requests marked with zero
+freshness (scrobble-history pages) are not retained in its response cache.
+
+## Collection retention
+
+The collection ListView uses row positions as its model. Each live or buffered
+delegate reads its record from the filtered/sorted JavaScript array, keeping
+nested track metadata outside the native model adaptor. Same-length data refreshes
+update delegate records without resetting the view position.
+
+Manually paging an active collection remains complete; there is no 200-row
+visible-list truncation. Each library category retains the most recent *complete
+page boundary* at or below 200 rows. When the category becomes inactive, or all UI
+surfaces close, surplus metadata is released and its exact matching `next` cursor
+is restored. For 30-row pages this is normally 180 rows. `Load more` reads every
+remaining page again, without skipping or silently treating the prefix as a
+complete collection. If no checkpoint exists, the category's loaded flag resets.
+
+The selected playlist and selected detail buffer retain the same bounded page
+checkpoint when all UI surfaces close. Their remembered restore depth survives
+trimming, and hidden responses do not continue automatic restore paging. Panel
+persists route/depth state before closing; opening a restored playlist can reload
+the requested depth while visible. Account reset drops all checkpoint references.
+This policy bounds library categories and selected playlist/detail buffers, with
+no eager library indexing or database. One-query search result buffers and the
+selected artist's album/song/playlist catalogs retain their existing behavior;
+they are not covered by this retention bound or the library fixture. The gate
+matrix is evidence for its listed workflows, not every browsing path.
+
+## Reproduction
+
+Export the exact base commit into a separate directory, then run:
+
+```bash
+mkdir -p /tmp/spotify-base
+git archive <base-sha> | tar -x -C /tmp/spotify-base
+./scripts/benchmark-compare.py /tmp/spotify-base "$PWD" \
+  --output /tmp/spotify-resource-report --seconds 10 --samples 3 --settle 20
+```
+
+The default matrix includes cold closed, closed-after-use, full and repeated-navigation states with
+1,000 and 10,000 metadata rows. Every source/state is a fresh Quickshell process,
+with a private DBus session, disabled system-bus address, private runtime directory,
+config/cache/state/data directories
+and stubbed keyring, systemctl and playback setup commands. Artwork and real
+playback are deliberately absent. No installed plugin or real account is changed.
+The same fixture comes from the candidate harness for both source revisions.
+Before recording a populated state it asserts the real library collection and
+ListView contain the requested number of normalized tracks. Its invalid OAuth
+identity and rejecting HTTP factories provide another guard against network work.
+Closed-after-use first opens that populated page, then closes every fixture
+surface and checks the candidate's retained library row budget. Closed cold loads
+no rows; its 1k/10k labels identify the matrix configuration, not loaded content.
+Navigation prebuilds normalized fixture records once, then reuses them so repeated
+route timings measure UI rebuilding instead of a synchronous mock-payload
+normalizer. Each cycle waits for Search's matching Loader to become ready, keeps
+that loaded component through a separate timer tick, then waits for Library's
+matching Loader and exact row count. A 15-second bound applies to initial and
+per-route readiness. Twenty Search and Library presentations are asserted per
+round; async cancellation cannot count as visiting a page. The same read-only
+`pageReady` observer is injected into older base revisions. This is logical QML
+presentation, with compositor/pixel presentation outside the offscreen metric.
+Feedback and deadline-lag sampling continue throughout every navigation round.
+Route changes follow production ordering: change Panel's tab before Service's
+active view. This destroys the outgoing table before inactive metadata trimming.
+The prefix checkpoint is prepared once; return navigation reuses a cached complete
+library or restores the fixture records once if the candidate trimmed it. It does
+not reset a still-complete library or rebuild its prefix on every return. This fixture-owned data is confined to navigation; closed-after-use
+keeps no such root references, so its retention comparison can release records.
+
+For mini sampling, the private copy of Omarchy's KeyboardPanel is input-transparent
+and unfocusable, with the other-output dismissal surfaces disabled. This keeps
+ordinary desktop input from dismissing the fixture and avoids intercepting the
+user's clicks/keys. The unused anchor window stays hidden. The actual BarWidget
+content still renders in a native Wayland layer-shell window; source BarWidget
+and installed Omarchy files are unchanged. This comparison excludes popup input
+focus/dismissal behavior as well as physical input/compositor latency. The harness
+fails if the copied KeyboardPanel structure no longer matches its isolation steps.
+
+Mini-player content uses a real Wayland layer-shell window, which Qt's offscreen
+backend does not provide. The offscreen report explicitly marks it skipped and
+returns `partial` even if all available gates pass. Run the mini case separately
+on Wayland (it briefly opens an isolated fixture window):
+
+```bash
+./scripts/benchmark-compare.py /tmp/spotify-base "$PWD" \
+  --output /tmp/spotify-mini-report --platform wayland --modes mini \
+  --seconds 10 --samples 3 --settle 20
+```
+
+`report.json` preserves every sample, medians, deltas, checks and limitations.
+It records `screening` versus `release-parameters`, and is set to `invalid` on a
+failed fixture instead of leaving a stale passing report. Full diagnostic logs
+are checked again after settling and sampling; state assertions run through IPC.
+Per-case logs preserve fixture diagnostics. A nonzero exit means a failed gate or
+invalid fixture, not a measured pass. Process-set changes, PID reuse and missing
+required `/proc` counters invalidate a sample. For real artwork, native audio and
+same-process shell overhead, use the live benchmark methods in BENCHMARK.md.
+
+
+## Short native CI screening
+
+On an Omarchy runner with Qt/Quickshell installed, run this in a quiet separate
+job after functional tests, with the base revision already exported to `$BASE`:
+
+```bash
+./scripts/benchmark-compare.py "$BASE" "$PWD" --output "$ARTIFACT_DIR/resource-screen" \
+  --modes closed full --rows 1000 --seconds 2 --samples 2 --settle 5
+```
+
+This takes roughly a minute and screens native startup, actual populated-page
+loading, local-control feedback and gross memory/idle regressions. Archive the
+JSON and logs even on failure. It does not replace the release matrix: 10k
+collections, after-use closed state, navigation plateau and Wayland mini still
+need the longer comparison. The sampler and resource-policy functional tests
+also run in the standard test suite; avoid running the resource samples while
+that suite or Rust compilation is active.

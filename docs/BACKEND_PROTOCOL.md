@@ -51,3 +51,42 @@ renaming a field, changing its meaning, or changing framing requires a new
 protocol version. The Quickshell service uses this socket to start local playback (`load`)
 and add to the local queue. Clients must retain MPRIS/Web API fallback
 behavior when the socket is absent or reports an unsupported version.
+
+The `hello` result advertises optional `capabilities`. Current backends return
+`queue_snapshot: true`, `queue_activate: false`, and `queue_edit: false`. Older
+version 1 backends without this capability retain the Web API queue fallback.
+The client validates both envelope and handshake protocol versions before
+sending playback commands. Pending requests have a five-second deadline and
+fail exactly once on disconnect or timeout. A sent command with an unknown
+outcome must never be automatically retried through another transport.
+
+Native queues use a separate event on connection and whenever the authoritative
+librespot `SetQueue` snapshot changes:
+
+```json
+{"type":"event","v":1,"event":"queue_changed","queue":{"context_uri":"spotify:playlist:...","current_track":{"uri":"spotify:track:...","provider":"context"},"next_tracks":[],"prev_tracks":[],"next_total":0,"truncated":false}}
+```
+
+The snapshot retains order and repeated URIs, with at most 100 upcoming and 20
+previous entries. Entries contain only URI and Spotify provider. `next_total`
+counts upcoming items before truncation; `truncated` indicates omitted upcoming
+items. A null queue invalidates the snapshot when the native session disconnects.
+Queue data is absent from ordinary state/position events and `get_state`;
+reconnect to receive the latest queue snapshot. There is no queue polling.
+
+The UI resolves uncached display metadata only for rows reported visible by the
+queue page or drawer,
+using bounded Web API metadata batches and a 200-entry account-local cache.
+Restricted metadata endpoints disable further metadata requests for that
+account session. Unavailable metadata retains URI identity and a placeholder; it cannot change
+queue order. Track/device changes invalidate Web queue snapshots and discard
+in-flight responses for the previous playback identity.
+
+Pinned librespot exposes `add_to_queue` but no public context-preserving queue
+jump, reorder, remove, or clear methods. The UI disables those controls rather
+than loading a replacement context. Batch add submits at most 100 tracks or
+episodes sequentially, preserving deliberately selected repeats; a partial or
+uncertain failure stops the batch without retrying the last item. Ordinary
+playback controls continue through local MPRIS, with existing Web/Sonos paths
+for remote receivers. Session recovery does not reconstruct lost contexts from
+this bounded display snapshot.

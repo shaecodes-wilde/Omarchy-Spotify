@@ -87,6 +87,40 @@ verify the new metric and choose a deeper search without clearing your feedback.
 
 ## Familiar from the first click
 
+The full player has Back/Forward history, a resizable library sidebar with local
+playlist pins, and optional Now playing and Queue panes. Closing a pane releases
+its view; inactive library and playlist metadata use bounded page checkpoints. Hidden Gems
+fetches new recommendations only while its page is visible.
+
+Search starts with Songs, Artists and Albums together. Open a category to page
+through more results, or paste a Spotify track, album, artist or playlist link
+into search to open it directly. Back/Forward remembers the route, filter, sort,
+loaded depth and scroll position; restored pages load only while visible.
+
+Song lists default to compact rows, with Save and duration visible and secondary
+actions behind the row menu. Use **Compact / Comfortable** and **Columns**
+to choose the density and metadata. Click selects a song, double-click or Enter
+plays it, Ctrl-click adds to the selection, Shift-click/Shift-arrow extends it,
+and Ctrl+A selects the loaded matching songs. The selection toolbar queues,
+saves, or adds the songs to a playlist. **Remove all copies** in an editable
+playlist removes every occurrence of each selected song. Hold Ctrl and drag a song
+or selection to a sidebar playlist to add it. Normal dragging within an unsorted,
+unfiltered editable playlist reorders its songs. Owned playlists support creation
+and name/description editing.
+
+The Queue pane follows the active playback source. The native receiver reports
+queue changes directly, resolves metadata only for visible rows, and keeps at
+most 200 resolved entries. Native queue jump, removal and reordering controls
+stay hidden until the receiver supports those operations safely. Remote queues
+remain subject to Spotify's API permissions; unavailable actions explain the
+restriction. Uncertain writes stop with a visible error rather than replaying
+an operation that might already have succeeded.
+
+
+[Native performance evidence](docs/performance/2026-10-19-desktop-parity/README.md)
+records ten passing metadata-fixture cases. At 10k songs, the full view uses 76.8 MiB
+less PSS than main; this does not measure live audio or artwork.
+
 The layout is inspired by the Spotify client, so there is almost nothing new
 to learn. Your library and playlists live in the sidebar, search stays at the
 top, the player stays at the bottom, and artist and album names take you
@@ -101,6 +135,8 @@ too.
 | `Ctrl+F` or `/` again | Toggle current area / all of Spotify |
 | `Tab` / `F6` | Move between sidebar, search, the song list, and the player |
 | `Arrow keys` | Move to a control; Enter activates |
+| `Alt+Left` / `Alt+Right` | Back / Forward |
+| `Ctrl+A` / `Shift+Up` / `Shift+Down` | Select loaded songs / extend selection |
 | `C` | Row actions; arrows or Enter choose |
 | `Space` | Play or pause |
 | `Ctrl+Left` / `Ctrl+Right` | Previous or next song |

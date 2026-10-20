@@ -689,18 +689,20 @@ TestCase {
 
   function test_discoveryPlaylists_keepsOfficialRelevantResultsInUsefulOrder() {
     var rows = Api.discoveryPlaylists([
+      { id: "name-only", type: "playlist", name: "Discover Weekly", ownerName: "Spotify" },
+      { id: "spoof", type: "playlist", name: "Discover Weekly", ownerId: "fan", ownerName: "Spotify" },
       { id: "fan", type: "playlist", name: "Discover Weekly", ownerName: "A listener" },
       { id: "fresh", uri: "spotify:playlist:fresh", type: "playlist",
-        name: "Fresh Finds Indie", ownerName: "Spotify" },
+        name: "Fresh Finds Indie", ownerId: "spotify", ownerName: "Spotify" },
       { id: "mix", uri: "spotify:playlist:mix", type: "playlist",
         name: "Daily Mix 2", ownerId: "spotify" },
       { id: "radar", uri: "spotify:playlist:radar", type: "playlist",
-        name: "Release Radar", ownerName: "Spotify" },
+        name: "Release Radar", ownerId: "spotify", ownerName: "Spotify" },
       { id: "weekly", uri: "spotify:playlist:weekly", type: "playlist",
-        name: "Discover Weekly", ownerName: "Spotify" },
+        name: "Discover Weekly", ownerId: "spotify", ownerName: "Spotify" },
       { id: "weekly", uri: "spotify:playlist:weekly", type: "playlist",
-        name: "Discover Weekly", ownerName: "Spotify" },
-      { id: "unrelated", type: "playlist", name: "Party Hits", ownerName: "Spotify" }
+        name: "Discover Weekly", ownerId: "spotify", ownerName: "Spotify" },
+      { id: "unrelated", type: "playlist", name: "Party Hits", ownerId: "spotify", ownerName: "Spotify" }
     ])
 
     compare(rows.length, 4)

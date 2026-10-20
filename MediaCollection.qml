@@ -4,10 +4,12 @@ import qs.Commons
 import qs.Ui
 
 import "Api.js" as Api
+import "Selection.js" as Selection
 
 Item {
   id: root
   objectName: "media-collection"
+  property var navigationOwner: null
 
   required property var service
   property var sourceItems: []
@@ -53,6 +55,25 @@ Item {
   property int dragDestinationIndex: -1
   property real dragSceneY: 0
   property int dragAutoScrollDirection: 0
+  property bool enableSelection: true
+  readonly property var actionPlaylist: {
+    if (!service || !contextUri) return null
+    if (service.selectedPlaylist && service.selectedPlaylist.uri === contextUri) return service.selectedPlaylist
+    if (service.detailItem && service.detailItem.type === "playlist" && service.detailItem.uri === contextUri) return service.detailItem
+    return null
+  }
+  property bool allowRemove: !!actionPlaylist && service.playlistEditable(actionPlaylist)
+  property bool showTableTools: showSort
+  property var selection: ({})
+  property int selectionAnchor: -1
+  readonly property int selectionCount: Object.keys(selection).length
+  readonly property bool trackTable: sourceItems.length > 0 && sourceItems[0].kind === "item"
+  readonly property bool compactRows: !service || !service.settings
+    || service.settings.trackDensity !== "Comfortable"
+  readonly property string columns: service && service.settings
+    ? String(service.settings.trackColumns || "Album + date") : "Album + date"
+  readonly property bool albumColumn: trackTable && width >= Style.space(600) && columns !== "Title only"
+  readonly property bool dateColumn: albumColumn && width >= Style.space(850) && columns === "Album + date"
 
   readonly property var visibleItems: Api.filteredSorted(sourceItems, filterText, sortKey)
   readonly property bool playbackUsesVisibleOrder: Api.playbackUsesVisibleOrder(
@@ -77,6 +98,42 @@ Item {
   signal reorderRequested(int sourceIndex, int destinationIndex)
   signal loadMoreRequested()
   signal viewStateChanged(string filterText, string sortKey, real contentY)
+  signal batchQueueRequested(var items)
+  signal batchPlaylistRequested(var items)
+  signal batchSaveRequested(var items)
+  signal batchRemoveRequested(var items)
+  signal listInteracted()
+  readonly property var selectedRows: selectionCount ? Selection.items(sourceItems, selection) : []
+
+  function selectedItems() { return selectedRows }
+  function isSelected(item) {
+    if (selectionCount === 0) return false
+    return selection[Selection.key(item)] === true
+  }
+  function clearSelection() { selection = ({}); selectionAnchor = -1 }
+  function restoreCurrentIndex(index) {
+    mediaList.currentIndex = Math.min(mediaList.count - 1, Math.max(0, Math.floor(Number(index) || 0)))
+  }
+  function selectRow(index, modifiers) {
+    selection = Selection.select(visibleItems, selection, index,
+      selectionAnchor, (modifiers & Qt.ControlModifier) !== 0,
+      (modifiers & Qt.ShiftModifier) !== 0)
+    if ((modifiers & Qt.ShiftModifier) === 0 || selectionAnchor < 0) selectionAnchor = index
+    mediaList.currentIndex = index
+    listInteracted()
+    mediaList.forceActiveFocus()
+  }
+  function selectAll() {
+    selection = Selection.select(visibleItems, ({}), visibleItems.length - 1, 0, false, true)
+  }
+  function setSort(value) {
+    sortKey = value
+    viewStateChanged(filterText, sortKey, mediaList.contentY)
+  }
+  function cycleColumns() {
+    var values = ["Album + date", "Album", "Title only"]
+    if (service) service.persistSettings({ trackColumns: values[(values.indexOf(columns) + 1) % values.length] })
+  }
 
   readonly property bool filterScanAvailable: scanner.available
   readonly property bool filterScanPaused: scanner.paused
@@ -120,6 +177,7 @@ Item {
     var next = Api.listIndexAfterMove(mediaList.count, mediaList.currentIndex, delta)
     if (next < 0) return false
     mediaList.currentIndex = next
+    if (keyboardShiftHeld) selectRow(next, Qt.ShiftModifier)
     return true
   }
 
@@ -285,12 +343,24 @@ Item {
     }
   }
 
-  Component.onCompleted: restoreView()
+  Component.onCompleted: {
+    restoreView()
+    if (navigationOwner) navigationOwner.registerCollection(root)
+  }
+  onSourceItemsChanged: {
+    if (selectionCount > 0) selection = Selection.retain(sourceItems, selection)
+    if (selectionCount === 0) selectionAnchor = -1
+  }
+  onFilterTextChanged: clearSelection()
+  onSortKeyChanged: clearSelection()
   onRestoredContentYChanged: resetRestore()
   onStateKeyChanged: resetRestore()
   onRestoreReadyChanged: if (restoreReady) resetRestore()
   onCanReorderChanged: if (!canReorder) cancelReorder()
-  Component.onDestruction: rememberView()
+  Component.onDestruction: {
+    if (navigationOwner) navigationOwner.unregisterCollection(root)
+    rememberView()
+  }
 
   Timer {
     interval: 30
@@ -363,12 +433,71 @@ Item {
       }
     }
 
+    Loader {
+      id: selectionTools
+      objectName: "media-selection-tools"
+      width: parent.width
+      active: root.selectionCount > 0
+      visible: active
+      height: active && item ? item.implicitHeight : 0
+      sourceComponent: Component {
+        Flow {
+          width: selectionTools.width
+          spacing: Style.space(5)
+          Text {
+            text: root.selectionCount + " selected"
+            color: Color.foreground
+            font.family: Style.font.family
+            font.pixelSize: Style.font.bodySmall
+          }
+          Button { visible: root.showQueue; text: "Queue"; onClicked: root.batchQueueRequested(root.selectedItems()) }
+          Button { visible: root.showPlaylist; text: "Add to playlist…"; onClicked: root.batchPlaylistRequested(root.selectedItems()) }
+          Button { visible: root.showSave; text: "Save / unsave"; onClicked: root.batchSaveRequested(root.selectedItems()) }
+          Button { visible: root.allowRemove; text: "Remove all copies"; onClicked: root.batchRemoveRequested(root.selectedItems()) }
+          Button { text: "Clear"; onClicked: root.clearSelection() }
+        }
+      }
+    }
+
+    Loader {
+      id: columnHeaders
+      objectName: "media-column-headers"
+      width: parent.width
+      active: root.trackTable && root.showTableTools
+      visible: active
+      height: active && item ? item.implicitHeight : 0
+      sourceComponent: Component {
+        Row {
+          width: columnHeaders.width
+          spacing: Style.space(5)
+          Button {
+            text: root.compactRows ? "Compact" : "Comfortable"
+            tooltipText: "Change track row density"
+            onClicked: if (root.service) root.service.persistSettings({ trackDensity: root.compactRows ? "Comfortable" : "Compact" })
+          }
+          Button { text: "Columns"; tooltipText: root.columns; onClicked: root.cycleColumns() }
+          Button { text: "Title"; onClicked: root.setSort("name") }
+          Button { visible: root.albumColumn; text: "Album"; onClicked: root.setSort("album") }
+          Button { visible: root.dateColumn; text: "Added"; onClicked: root.setSort(root.sortKey === "date" ? "date-asc" : "date") }
+          Button { text: "Time"; onClicked: root.setSort("duration") }
+        }
+      }
+    }
+
     ListView {
       id: mediaList
       width: parent.width
       height: Math.max(30, parent.height - tools.height - moreButton.height
-        - emptyLabel.height - filterProgress.height - parent.spacing * 4)
-      model: root.visibleItems
+        - emptyLabel.height - filterProgress.height - selectionTools.height
+        - columnHeaders.height - parent.spacing * (
+          (tools.visible && tools.height > 0 ? 1 : 0)
+          + (selectionTools.visible && selectionTools.height > 0 ? 1 : 0)
+          + (columnHeaders.visible && columnHeaders.height > 0 ? 1 : 0)
+          + (emptyLabel.visible && emptyLabel.height > 0 ? 1 : 0)
+          + (filterProgress.visible && filterProgress.height > 0 ? 1 : 0)
+          + (moreButton.visible && moreButton.height > 0 ? 1 : 0)))
+      // Keep metadata in JS; materialize only the rows the view actually needs.
+      model: root.visibleItems.length
       clip: true
       spacing: Style.space(3)
       reuseItems: true
@@ -390,6 +519,17 @@ Item {
         onScrolled: root.rememberView()
       }
 
+      Keys.onPressed: function(event) {
+        if (root.enableSelection && event.key === Qt.Key_A
+            && (event.modifiers & Qt.ControlModifier)) {
+          root.selectAll()
+          event.accepted = true
+        } else if (event.key === Qt.Key_Escape && root.selectionCount > 0) {
+          root.clearSelection()
+          event.accepted = true
+        }
+      }
+
       Keys.onReturnPressed: function(event) {
         if (!root.keyboardAtList) {
           event.accepted = false
@@ -408,14 +548,20 @@ Item {
       }
 
       delegate: MediaRow {
-        required property var modelData
         required property int index
-        itemData: modelData
+        readonly property var rowItem: root.visibleItems[index] || null
+        itemData: rowItem
         foreground: Color.foreground
         accent: Color.accent
         fontFamily: Style.font.family
-        selected: ListView.isCurrentItem && root.keyboardAtList
-        browseOnActivate: root.browseContexts && modelData.kind === "context"
+        selected: root.isSelected(rowItem) || (ListView.isCurrentItem && root.keyboardAtList)
+        selectionEnabled: root.enableSelection && !!rowItem && rowItem.kind === "item"
+        compactRows: root.compactRows && root.trackTable
+        albumColumn: root.albumColumn
+        dateColumn: root.dateColumn
+        draggedItems: root.isSelected(rowItem) ? root.selectedItems() : [rowItem]
+        onSelectionRequested: function(modifiers) { root.selectRow(index, modifiers) }
+        browseOnActivate: root.browseContexts && !!rowItem && rowItem.kind === "context"
         showQueue: root.showQueue
         showPlaylist: root.showPlaylist
         showSave: root.showSave
@@ -424,7 +570,7 @@ Item {
         reorderDropIndicator: root.dragDestinationIndex === index
           && root.dragSourceIndex !== index
           ? (index < root.dragSourceIndex ? -1 : 1) : 0
-        saved: root.service ? root.service.isSaved(modelData) : false
+        saved: root.service ? root.service.isSaved(rowItem) : false
         artworkEnabled: !root.service || root.service.artworkEnabled
         ShortcutHint {
           ctrlHeld: root.keyboardCtrlHeld

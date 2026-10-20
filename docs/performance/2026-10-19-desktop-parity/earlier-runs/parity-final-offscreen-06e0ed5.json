@@ -1,0 +1,114 @@
+{
+  "status": "running",
+  "measurement_profile": "release-parameters",
+  "seconds": 10,
+  "samples": 3,
+  "settle_seconds": 20,
+  "platform": "offscreen",
+  "metadata_only": true,
+  "artwork": false,
+  "live_account": false,
+  "baseline": "/tmp/omarchy-spotify-baseline",
+  "candidate": "/home/shaedotwilde/.cache/omarchy-spotify/parity-candidate-06e0ed5",
+  "limitations": [
+    "Offscreen measures native item creation and local event feedback, not compositor input-to-photon latency.",
+    "Fixture metadata has no artwork; use live benchmark.sh for actual artwork/playback costs.",
+    "Keyring, systemctl and playback setup commands are stubbed; runtime and DBus session are isolated."
+  ],
+  "cases": {
+    "navigation-1000": {
+      "baseline": {
+        "samples": [
+          {
+            "pss_kib": 137099,
+            "rss_kib": 174416,
+            "cpu_percent": 0.0,
+            "switches_per_second": 0.0,
+            "seconds": 10.000100600067526
+          },
+          {
+            "pss_kib": 130457,
+            "rss_kib": 167768,
+            "cpu_percent": 0.0,
+            "switches_per_second": 0.0,
+            "seconds": 10.000064764986746
+          },
+          {
+            "pss_kib": 130728,
+            "rss_kib": 168040,
+            "cpu_percent": 0.0,
+            "switches_per_second": 0.0,
+            "seconds": 10.000080359051935
+          }
+        ],
+        "median": {
+          "pss_kib": 130728,
+          "rss_kib": 168040,
+          "cpu_percent": 0.0,
+          "switches_per_second": 0.0,
+          "seconds": 10.000080359051935
+        },
+        "feedback_sample_count": 90,
+        "event_loop_lag_sample_count": 90,
+        "event_loop_lag_p95_ms": 64.0,
+        "feedback_p95_ms": 36.0,
+        "navigation_p95_ms": 176.0,
+        "plateau_growth_kib": -6371
+      },
+      "candidate": {
+        "samples": [
+          {
+            "pss_kib": 143345,
+            "rss_kib": 181124,
+            "cpu_percent": 0.0,
+            "switches_per_second": 0.0,
+            "seconds": 10.0000706249848
+          },
+          {
+            "pss_kib": 144555,
+            "rss_kib": 182088,
+            "cpu_percent": 0.0,
+            "switches_per_second": 0.0,
+            "seconds": 10.000114619964734
+          },
+          {
+            "pss_kib": 146089,
+            "rss_kib": 183704,
+            "cpu_percent": 0.0,
+            "switches_per_second": 0.0,
+            "seconds": 10.000066143926233
+          }
+        ],
+        "median": {
+          "pss_kib": 144555,
+          "rss_kib": 182088,
+          "cpu_percent": 0.0,
+          "switches_per_second": 0.0,
+          "seconds": 10.0000706249848
+        },
+        "feedback_sample_count": 115,
+        "event_loop_lag_sample_count": 115,
+        "event_loop_lag_p95_ms": 96.0,
+        "feedback_p95_ms": 51.0,
+        "navigation_p95_ms": 318.0,
+        "plateau_growth_kib": 2744
+      },
+      "delta": {
+        "pss_kib": 13827,
+        "cpu_percent": 0.0,
+        "switches_per_second": 0.0,
+        "navigation_p95_ratio": 1.8068181818181819
+      },
+      "budget_pss_kib": 5120,
+      "checks": {
+        "memory": false,
+        "hidden_cpu": true,
+        "scheduler": true,
+        "feedback": true,
+        "event_loop_lag": true,
+        "cache_plateau": false
+      }
+    }
+  },
+  "skipped": []
+}
