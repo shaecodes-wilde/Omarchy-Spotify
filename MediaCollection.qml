@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Controls
 import qs.Commons
+import qs.Commons as Theme
 import qs.Ui
 
 import "Api.js" as Api
@@ -395,7 +396,7 @@ Item {
         width: visible ? Math.max(80, parent.width
           - (sortButton.visible ? sortButton.width + parent.spacing : 0)
           - countLabel.width - parent.spacing) : 0
-        foreground: Color.foreground
+        foreground: Theme.Color.foreground
         placeholderText: "Filter this list"
         text: root.filterText
         onTextEdited: {
@@ -410,7 +411,7 @@ Item {
         visible: root.showSort
         text: root.sortLabel()
         iconText: "󰒺"
-        foreground: Color.foreground
+        foreground: Theme.Color.foreground
         tooltipText: "Change sort order"
         focusable: false
         hasCursor: root.keyboardSortSelected
@@ -427,7 +428,7 @@ Item {
         text: root.visibleItems.length
           + (root.filterText ? (root.visibleItems.length === 1 ? " match" : " matches")
             : (root.visibleItems.length === 1 ? " item" : " items"))
-        color: Color.muted
+        color: Theme.Color.muted
         font.family: Style.font.family
         font.pixelSize: Style.font.caption
       }
@@ -446,7 +447,7 @@ Item {
           spacing: Style.space(5)
           Text {
             text: root.selectionCount + " selected"
-            color: Color.foreground
+            color: Theme.Color.foreground
             font.family: Style.font.family
             font.pixelSize: Style.font.bodySmall
           }
@@ -551,8 +552,8 @@ Item {
         required property int index
         readonly property var rowItem: root.visibleItems[index] || null
         itemData: rowItem
-        foreground: Color.foreground
-        accent: Color.accent
+        foreground: Theme.Color.foreground
+        accent: Theme.Color.accent
         fontFamily: Style.font.family
         selected: root.isSelected(rowItem) || (ListView.isCurrentItem && root.keyboardAtList)
         selectionEnabled: root.enableSelection && !!rowItem && rowItem.kind === "item"
@@ -623,7 +624,7 @@ Item {
       height: visible ? contentHeight : 0
       visible: !root.loading && root.visibleItems.length === 0
       text: root.emptyMessage
-      color: Color.muted
+      color: Theme.Color.muted
       font.family: Style.font.family
       font.pixelSize: Style.font.bodySmall
       horizontalAlignment: Text.AlignHCenter
@@ -638,7 +639,7 @@ Item {
       spacing: Style.space(6)
       Text {
         text: "Filtering " + root.sourceItems.length + " loaded items. More remain."
-        color: Color.muted
+        color: Theme.Color.muted
         font.family: Style.font.family
         font.pixelSize: Style.font.caption
         width: Math.min(implicitWidth, parent.width)
@@ -649,7 +650,7 @@ Item {
         enabled: !scanner.blocked && !scanner.waitingForCooldown
         hasCursor: root.keyboardFilterScanSelected
         ShortcutHint { active: root.keyboardHintsActive; navHint: root.keyboardFilterScanHint }
-        foreground: Color.foreground
+        foreground: Theme.Color.foreground
         onClicked: scanner.paused ? scanner.resume() : scanner.cancel()
       }
     }
@@ -660,7 +661,7 @@ Item {
       height: visible ? implicitHeight : 0
       visible: root.loading || root.hasMore
       text: root.loading ? "Loading…" : "Load more"
-      foreground: Color.foreground
+      foreground: Theme.Color.foreground
       enabled: root.hasMore && !root.loading
       hasCursor: root.keyboardMoreSelected
       onClicked: root.loadMoreRequested()
@@ -682,8 +683,8 @@ Item {
     enabled: false
     z: 20
     radius: Style.cornerRadius
-    color: Style.selectedFillFor(Color.foreground, Color.accent)
-    borderSpec: Border.controlSpec("selected", Color.foreground, Color.accent)
+    color: Style.selectedFillFor(Theme.Color.foreground, Theme.Color.accent)
+    borderSpec: Border.controlSpec("selected", Theme.Color.foreground, Theme.Color.accent)
     opacity: 0.94
 
     Row {
@@ -698,7 +699,7 @@ Item {
         Text {
           width: parent.width
           text: root.dragItem ? String(root.dragItem.name || "Untitled") : ""
-          color: Color.foreground
+          color: Theme.Color.foreground
           font.family: Style.font.family
           font.pixelSize: Style.font.body
           font.bold: true
@@ -708,7 +709,7 @@ Item {
         Text {
           width: parent.width
           text: root.dragItem ? String(root.dragItem.subtitle || "") : ""
-          color: Color.muted
+          color: Theme.Color.muted
           font.family: Style.font.family
           font.pixelSize: Style.font.caption
           elide: Text.ElideRight

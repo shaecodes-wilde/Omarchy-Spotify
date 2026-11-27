@@ -2,6 +2,7 @@ import QtQuick
 import QtQuick.Controls
 import Quickshell
 import qs.Commons
+import qs.Commons as Theme
 import qs.Ui
 
 import "Api.js" as Api
@@ -16,7 +17,6 @@ Item {
   property bool opened: false
   property bool closingFromHost: false
   property bool escapeCloseArmed: false
-  property real volumeBeforeMute: 0.5
   property double lastVolumeAdjustAt: 0
   property string currentTab: "home"
   readonly property bool pageReady: pageLoader.status === Loader.Ready && pageLoader.item !== null
@@ -115,15 +115,15 @@ Item {
   readonly property string pluginId: manifest && manifest.id
     ? String(manifest.id) : "quickshell.spotify"
   readonly property string lyricsRequestKey: "spotify-panel-lyrics"
-  readonly property color foreground: Color.foreground
-  readonly property color background: Color.background
-  readonly property color accent: Color.accent
-  readonly property color muted: Color.muted
+  readonly property color foreground: Theme.Color.foreground
+  readonly property color background: Theme.Color.background
+  readonly property color accent: Theme.Color.accent
+  readonly property color muted: Theme.Color.muted
   // In-panel popups have no blur behind them, so a translucent theme popup
   // colour is floored to stay readable over the list beneath.
   readonly property color popupBackground: Api.opaqueSurface(
-    Color.popups.background, 0.96)
-  readonly property var popupBorderSpec: Border.flat(Color.popups.border,
+    Theme.Color.popups.background, 0.96)
+  readonly property var popupBorderSpec: Border.flat(Theme.Color.popups.border,
     Math.max(1, Style.normalBorderWidth))
   readonly property int popupScrollbarGutter: Style.space(14)
   readonly property string fontFamily: Style.font.family
@@ -183,7 +183,7 @@ Item {
   readonly property var panelBar: QtObject {
     readonly property color foreground: root.foreground
     readonly property color background: root.background
-    readonly property color urgent: Color.urgent
+    readonly property color urgent: Theme.Color.urgent
     readonly property string fontFamily: root.fontFamily
     readonly property string position: "top"
     readonly property bool vertical: false
@@ -333,7 +333,7 @@ Item {
 
   function openMediaContext(item, sceneX, sceneY, sourceItems, contextUri, index,
       playbackContextUri) {
-    if (!item) return
+    if (!item || item.kind === "unavailable") return
     contextItem = item
     contextSourceItems = Array.isArray(sourceItems) ? sourceItems : []
     contextSourceUri = String(contextUri || "")
@@ -719,7 +719,7 @@ Item {
     if (!service || !service.selectedPlaylist) return
     var collection = pageCollection()
     if (collection && collection.playbackUsesVisibleOrder) {
-      var items = Api.arrayValues(collection.visibleItems)
+      var items = collection.visibleItems.filter(function(row) { return !!row.uri })
       if (!items.length) {
         service.fail("No visible playlist items to play")
         return
@@ -1981,9 +1981,7 @@ Item {
 
   function setPanelVolume(value, live) {
     if (!service || !service.volumeSupported) return
-    var next = Api.nextVolume(value, 0)
-    if (Api.shouldRememberVolume(next)) volumeBeforeMute = next
-    service.setVolume(next, live === true)
+    service.setVolume(Api.nextVolume(value, 0), live === true)
   }
 
   function adjustVolume(delta) {
@@ -1995,12 +1993,7 @@ Item {
   }
 
   function toggleMute() {
-    if (!service || !service.volumeSupported) return
-    var current = Api.nextVolume(service.volume, 0)
-    if (Api.shouldRememberVolume(current)) {
-      volumeBeforeMute = current
-      service.setVolume(0)
-    } else service.setVolume(Api.unmuteVolume(volumeBeforeMute))
+    if (service) service.toggleMute()
   }
 
   function toggleShortcutHelp() {
@@ -3851,10 +3844,10 @@ Item {
                 id: closeButton
                 anchors.verticalCenter: parent.verticalCenter
                 iconText: "󰅖"
-                foreground: root.escapeCloseArmed ? Color.urgent : root.foreground
+                foreground: root.escapeCloseArmed ? Theme.Color.urgent : root.foreground
                 bordered: root.escapeCloseArmed
                 borderSpec: root.escapeCloseArmed
-                  ? Border.flat(Color.urgent, Math.max(1, Style.normalBorderWidth))
+                  ? Border.flat(Theme.Color.urgent, Math.max(1, Style.normalBorderWidth))
                   : closeButton._borderSpec
                 tooltipText: root.escapeCloseArmed
                   ? "Press Esc again to close"
@@ -3878,10 +3871,10 @@ Item {
               visible: root.service && (root.searchCooldownSeconds > 0
                 || root.service.lastError !== "" || root.service.statusMessage !== "")
               color: root.service && root.service.lastError !== ""
-                ? Style.selectedFillFor(root.foreground, Color.urgent)
+                ? Style.selectedFillFor(root.foreground, Theme.Color.urgent)
                 : Style.normalFillFor(root.foreground, root.accent)
               borderSpec: Border.controlSpec("normal", root.foreground,
-                root.service && root.service.lastError !== "" ? Color.urgent : root.accent)
+                root.service && root.service.lastError !== "" ? Theme.Color.urgent : root.accent)
               radius: Style.cornerRadius
 
               Text {
@@ -4153,8 +4146,8 @@ Item {
                       iconText: root.service && root.service.currentTrackSaved
                         ? "󰋑" : "󰋕"
                       iconSize: Style.font.body
-                      foreground: Color.urgent
-                      accent: Color.urgent
+                      foreground: Theme.Color.urgent
+                      accent: Theme.Color.urgent
                       enabled: root.service && root.service.currentTrackSaveAvailable
                       horizontalPadding: Style.space(4)
                       verticalPadding: Style.space(2)
@@ -4526,7 +4519,7 @@ Item {
                   step: 0.05
                   sourceValue: root.service ? root.service.volume : 0
                   sourcePending: root.service && root.service.volumePending
-                  contextKey: root.service ? root.service.playbackDeviceName : ""
+                  contextKey: root.service ? root.service.volumeDeviceKey : ""
                   liveCommit: true
                   onCommitted: function(value, live) {
                     root.setPanelVolume(value, live)
@@ -4828,8 +4821,8 @@ Item {
                   ? "Saved" : "Save"
                 iconText: root.service && root.service.isSaved(root.service.detailItem)
                   ? "󰓎" : "󰋑"
-                foreground: Color.urgent
-                accent: Color.urgent
+                foreground: Theme.Color.urgent
+                accent: Theme.Color.urgent
                 focusable: false
                 hasCursor: root.cursorOn("page", "detail-save")
                 enabled: root.service && root.service.detailItem
@@ -5465,11 +5458,11 @@ Item {
               foreground: root.foreground
               selected: true
               enabled: !playlistItemsCollection.playbackUsesVisibleOrder
-                || playlistItemsCollection.visibleItems.length > 0
+                || playlistItemsCollection.visibleItems.some(row => !!row.uri)
               hasCursor: root.cursorOn("page", "playlist-play")
               tooltipText: playlistItemsCollection.playbackUsesVisibleOrder
                 ? Api.visibleOrderPlaybackMessage(
-                  playlistItemsCollection.visibleItems.length)
+                  playlistItemsCollection.visibleItems.filter(row => !!row.uri).length)
                 : "Play this playlist in its original order"
               onClicked: root.playSelectedPlaylist()
               onHovered: function(on) {
@@ -5989,7 +5982,7 @@ Item {
               Text {
                 width: parent.width
                 text: root.connectionErrorText()
-                color: Color.urgent
+                color: Theme.Color.urgent
                 font.family: root.fontFamily
                 font.pixelSize: Style.font.bodySmall
                 wrapMode: Text.WordWrap
@@ -6121,7 +6114,7 @@ Item {
             Text {
               width: parent.width
               text: root.connectionErrorText()
-              color: Color.urgent
+              color: Theme.Color.urgent
               font.family: root.fontFamily
               font.pixelSize: Style.font.bodySmall
               wrapMode: Text.WordWrap

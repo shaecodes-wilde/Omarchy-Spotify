@@ -1,5 +1,6 @@
 import QtQuick
 import qs.Commons
+import qs.Commons as Theme
 import qs.Ui
 import "Api.js" as Api
 
@@ -70,7 +71,7 @@ import "Api.js" as Api
             anchors.verticalCenter: parent.verticalCenter
             text: panel.searchCooldownSeconds > 0 && panel.service
               ? panel.service.searchProgressText(panel.searchClock) : searchRoot.errorText
-            color: Color.urgent
+            color: Theme.Color.urgent
             font.family: panel.fontFamily
             font.pixelSize: Style.font.bodySmall
             wrapMode: Text.WordWrap

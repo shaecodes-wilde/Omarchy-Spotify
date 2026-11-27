@@ -4,6 +4,7 @@ import Quickshell
 import Quickshell.Io
 import Quickshell.Services.Mpris
 import qs.Commons
+import qs.Commons as Theme
 import qs.Ui
 
 import "Api.js" as Api
@@ -47,8 +48,8 @@ BarWidget {
     : !!localPlayer && localPlayer.canGoPrevious
   readonly property bool canGoNext: spotify ? spotify.playbackControllable
     : !!localPlayer && localPlayer.canGoNext
-  readonly property color foreground: bar ? bar.foreground : Color.foreground
-  readonly property color muted: Color.muted
+  readonly property color foreground: bar ? bar.foreground : Theme.Color.foreground
+  readonly property color muted: Theme.Color.muted
   readonly property string surfaceKey: "spotify-popup-" + String(root)
   readonly property string lyricsRequestKey: surfaceKey + "-lyrics"
   readonly property string barText: Api.barTrackText(currentTitle, currentArtist,
@@ -69,7 +70,6 @@ BarWidget {
   property bool popoutSwitchClosing: false
   property bool miniCursorActive: false
   property string miniCursor: "play"
-  property real volumeBeforeMute: 0.5
   property bool shortcutModeLatched: false
   property int heldModifierFlags: 0
   property bool pendingShortcutLatch: false
@@ -91,7 +91,7 @@ BarWidget {
     altHeld: root.hintAltHeld
     active: root.shortcutHintsActive
     foreground: root.foreground
-    accent: Color.accent
+    accent: Theme.Color.accent
   }
   readonly property bool opened: popupOpen
   readonly property var miniShortcutRows: spotify && spotify.showLyrics
@@ -381,9 +381,7 @@ BarWidget {
 
   function setVolumeValue(value, live) {
     if (!spotify || !spotify.volumeSupported) return false
-    var next = Api.nextVolume(value, 0)
-    if (Api.shouldRememberVolume(next)) volumeBeforeMute = next
-    spotify.setVolume(next, live === true)
+    spotify.setVolume(Api.nextVolume(value, 0), live === true)
     return true
   }
 
@@ -393,12 +391,7 @@ BarWidget {
   }
 
   function toggleMute() {
-    if (!spotify || !spotify.volumeSupported) return
-    var current = Api.nextVolume(spotify.volume, 0)
-    if (Api.shouldRememberVolume(current)) {
-      volumeBeforeMute = current
-      spotify.setVolume(0)
-    } else spotify.setVolume(Api.unmuteVolume(volumeBeforeMute))
+    if (spotify) spotify.toggleMute()
   }
 
   function activateMiniAction(action) {
@@ -859,7 +852,7 @@ BarWidget {
           text: root.spotify ? (root.spotify.lastError
             || root.spotify.auth.lastError
             || root.spotify.daemon.lastError) : ""
-          color: Color.urgent
+          color: Theme.Color.urgent
           font.family: root.bar ? root.bar.fontFamily : Style.font.family
           font.pixelSize: Style.font.caption
           wrapMode: Text.WordWrap
@@ -915,8 +908,8 @@ BarWidget {
             anchors.fill: parent
             visible: !root.vinylRecordEnabled
             radius: Style.cornerRadius
-            color: Style.normalFillFor(root.foreground, Color.accent)
-            borderSpec: Border.controlSpec("normal", root.foreground, Color.accent)
+            color: Style.normalFillFor(root.foreground, Theme.Color.accent)
+            borderSpec: Border.controlSpec("normal", root.foreground, Theme.Color.accent)
 
             RetryImage {
               id: popupArtwork
@@ -948,7 +941,7 @@ BarWidget {
             anchors.fill: parent
             visible: root.vinylRecordEnabled
             radius: width / 2
-            color: Style.normalFillFor(root.foreground, Color.accent)
+            color: Style.normalFillFor(root.foreground, Theme.Color.accent)
             border.width: 1
             border.color: root.foreground
             clip: true
@@ -968,7 +961,7 @@ BarWidget {
               anchors.fill: parent
               anchors.margins: Style.space(3)
               radius: width / 2
-              color: Style.normalFillFor(root.foreground, Color.accent)
+              color: Style.normalFillFor(root.foreground, Theme.Color.accent)
               clip: true
 
               RotationAnimation on rotation {
@@ -1009,7 +1002,7 @@ BarWidget {
                 width: Math.max(Style.space(8), parent.width * 0.16)
                 height: width
                 radius: width / 2
-                color: Color.background
+                color: Theme.Color.background
                 border.width: 1
                 border.color: Qt.rgba(0, 0, 0, 0.35)
                 visible: popupRecordArtwork.status === Image.Ready
@@ -1064,8 +1057,8 @@ BarWidget {
               iconText: root.spotify && root.spotify.currentTrackSaved
                 ? "󰋑" : "󰋕"
               iconSize: Style.font.body
-              foreground: Color.urgent
-              accent: Color.urgent
+              foreground: Theme.Color.urgent
+              accent: Theme.Color.urgent
               hasCursor: root.miniCursorActive && root.miniCursor === "like"
               enabled: root.spotify && root.spotify.currentTrackSaveAvailable
               horizontalPadding: Style.space(4)
@@ -1109,8 +1102,8 @@ BarWidget {
                 && root.spotify && root.spotify.currentArtistContextAvailable
               color: root.spotify && root.spotify.artist !== ""
                 && root.spotify.currentArtistContextAvailable
-                ? Color.accent : root.muted
-              accent: Color.accent
+                ? Theme.Color.accent : root.muted
+              accent: Theme.Color.accent
               font.family: root.bar ? root.bar.fontFamily : Style.font.family
               font.pixelSize: Style.font.bodySmall
               onArtistRequested: function(item) { root.openArtist(item) }
@@ -1154,8 +1147,8 @@ BarWidget {
               fallbackClickable: root.spotify
                 && root.spotify.currentAlbumContextAvailable
               color: root.spotify && root.spotify.currentAlbumContextAvailable
-                ? Color.accent : root.muted
-              accent: Color.accent
+                ? Theme.Color.accent : root.muted
+              accent: Theme.Color.accent
               font.family: root.bar ? root.bar.fontFamily : Style.font.family
               font.pixelSize: Style.font.caption
               onFallbackRequested: root.openCurrentAlbum()
@@ -1358,7 +1351,7 @@ BarWidget {
             step: 0.05
             sourceValue: root.spotify ? root.spotify.volume : 0
             sourcePending: root.spotify && root.spotify.volumePending
-            contextKey: root.spotify ? root.spotify.playbackDeviceName : ""
+            contextKey: root.spotify ? root.spotify.volumeDeviceKey : ""
             enabled: root.spotify && root.spotify.volumeSupported
             liveCommit: true
             onCommitted: function(value, live) {

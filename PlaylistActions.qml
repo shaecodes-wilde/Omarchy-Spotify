@@ -218,10 +218,12 @@ Item {
       && String(host.detailItem.id || "") === playlistId
     var orderingItems = Array.isArray(sourceItems) ? sourceItems
       : (selectedMatches ? host.playlistItems : (detailMatches ? host.detailItems : []))
+    var sourceRow = orderingItems[sourceIndex]
+    var revision = (sourceRow && sourceRow.playlistSnapshot) || target.snapshotId
     var body = orderingItems.length
       ? Api.playlistReorderBodyForItems(orderingItems, sourceIndex,
         destinationIndex, Math.max(length, Number(target.total) || 0),
-        target.snapshotId)
+        revision)
       : Api.playlistReorderBody(sourceIndex, destinationIndex, length,
         target ? target.snapshotId : "")
     if (!body) return
@@ -256,6 +258,8 @@ Item {
           return
         }
         host.updatePlaylistSnapshot(target.id, payload && payload.snapshot_id)
+        if (sourceRow && sourceRow.playlistSnapshot !== (payload && payload.snapshot_id))
+          host.reloadPlaylist(target)
         host.succeed("Playlist order updated")
       }, { priority: "interactive", retryRateLimit: false })
   }

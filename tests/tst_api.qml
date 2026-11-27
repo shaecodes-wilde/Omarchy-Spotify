@@ -175,6 +175,7 @@ TestCase {
     verify(!Api.shouldRememberVolume(0.001))
     compare(Api.unmuteVolume(0.4), 0.4)
     compare(Api.unmuteVolume(0), 0.05)
+    compare(Api.unmuteVolume(2), 1)
     compare(Api.seekPosition(10, 10, 183), 20)
     compare(Api.seekPosition(180, 10, 183), 183)
     compare(Api.seekPosition(5, -10, 183), 0)
@@ -977,6 +978,19 @@ TestCase {
     compare(page.next, Api.API_BASE + "/me/tracks?offset=1")
     compare(page.previous, "")
     compare(page.total, 2)
+  }
+
+  function test_playlistRows_preserveMissingItemsAndRevision() {
+    var values = [{ item: { id: "one", uri: "spotify:track:one", name: "One" } },
+      { item: null }, { track: { id: "one", uri: "spotify:track:one", name: "One" } }]
+    var position = 7
+    var page = Api.normalizePage({ items: values }, function(value) {
+      return Api.normalizePlaylistEntry(value, position++, "snapshot")
+    })
+    compare(page.items.map(item => item.playlistPosition), [7, 8, 9])
+    compare(page.items.map(item => item.playlistSnapshot), ["snapshot", "snapshot", "snapshot"])
+    compare(page.items[1].kind, "unavailable")
+    compare(Api.playlistItemUris(page.items), ["spotify:track:one", "spotify:track:one"])
   }
 
   function test_playlistPageState_keepsLoadingPastSharedCacheLimit() {
