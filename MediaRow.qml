@@ -56,26 +56,30 @@ BorderSurface {
     + (saveActionVisible ? 1 : 0) + (playlistActionVisible ? 1 : 0)
     + (queueActionVisible ? 1 : 0) + (playActionVisible ? 1 : 0)
   // Keep overflow measurements stable without constructing hidden action controls.
-  TextMetrics {
+  Text {
     id: toggleMetrics
+    visible: false
+    textFormat: Text.PlainText
     text: actionToggle.iconText
     font.family: actionToggle.fontFamily
     font.pixelSize: actionToggle.iconSize
   }
-  readonly property real actionButtonInsets: actionToggle.implicitWidth - toggleMetrics.advanceWidth
+  readonly property real actionButtonInsets: actionToggle.implicitWidth - toggleMetrics.implicitWidth
   component RowAction: Loader {
     id: action
     required property string glyph
     property string tip: ""
     property color foreground: root.foreground
     property color accent: Theme.Color.accent
-    readonly property real fullWidth: metrics.advanceWidth + root.actionButtonInsets
+    readonly property real fullWidth: metrics.implicitWidth + root.actionButtonInsets
     signal triggered()
     active: visible
     width: fullWidth
     height: item ? item.implicitHeight : 0
-    TextMetrics {
+    Text {
       id: metrics
+      visible: false
+      textFormat: Text.PlainText
       text: action.glyph
       font.family: actionToggle.fontFamily
       font.pixelSize: actionToggle.iconSize

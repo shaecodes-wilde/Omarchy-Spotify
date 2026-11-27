@@ -303,7 +303,7 @@ Item {
       return "Set up playback"
     if (accountConnected) return "Finish playback setup"
     if (!service.daemon.playbackReady) return "Set up and continue"
-    return "Continue with Spotify"
+    return service.nativeMode ? "Log in with Spotify" : "Continue with Spotify"
   }
 
   function connectionHeadline() {
@@ -2939,6 +2939,19 @@ Item {
       }
 
       ContextMenuButton {
+        contextAction: "ctx-remove-one"
+        visible: root.contextPlaylist && root.service && root.service.nativeMode
+          && root.service.playlistEditable(root.contextPlaylist)
+          && root.contextItem && root.contextItem.kind === "item"
+        text: "Remove this copy from playlist"
+        iconText: "󰅖"
+        onClicked: {
+          mediaContextMenu.close()
+          root.service.removePlaylistOccurrence(root.contextItem, root.contextPlaylist)
+        }
+      }
+
+      ContextMenuButton {
         contextAction: "ctx-remove"
         visible: root.contextPlaylist && root.service
           && root.service.playlistEditable(root.contextPlaylist)
@@ -2946,9 +2959,8 @@ Item {
         text: "Remove all copies from playlist"
         iconText: "󰅖"
         onClicked: {
-          var position = root.playlistPosition(root.contextItem)
           mediaContextMenu.close()
-          root.service.removePlaylistItem(root.contextItem, position, root.contextPlaylist)
+          root.service.removePlaylistItems([root.contextItem], root.contextPlaylist)
         }
       }
 
@@ -6257,7 +6269,7 @@ Item {
               width: parent.width
               spacing: Style.space(6)
               Text {
-                text: "PERSONAL SPOTIFY APP · OPTIONAL"
+                text: "SPOTIFY WEB API ACCESS"
                 color: root.muted
                 font.family: root.fontFamily
                 font.pixelSize: Style.font.caption
@@ -6274,7 +6286,7 @@ Item {
                 width: parent.width
                 text: root.draftClientId.trim() && !/^[0-9a-f]{32}$/i.test(root.draftClientId.trim())
                   ? "Enter a client ID with exactly 32 hexadecimal characters."
-                  : "Uses your developer app's quota. Changing this clears the current session and requires authorization for the selected app."
+                  : "Used by Web API sign-in and, with Spotify pairing, for listening history and audiobooks."
                 color: root.muted
                 font.family: root.fontFamily
                 font.pixelSize: Style.font.caption
@@ -6287,6 +6299,33 @@ Item {
                   || /^[0-9a-f]{32}$/i.test(root.draftClientId.trim()))
                   && root.draftClientId.trim().toLowerCase() !== String(root.service.settings.clientId || "")
                 onClicked: root.service.persistSettings({ clientId: root.draftClientId.trim() })
+              }
+              Row {
+                spacing: Style.space(7)
+                Button {
+                  text: "Connect Web API access"
+                  foreground: root.foreground
+                  visible: root.service && root.service.nativeMode
+                  enabled: root.service && !root.service.loginBusy
+                  onClicked: root.service.connectWebAccess()
+                }
+                Button {
+                  text: root.service && root.service.nativeMode ? "Use Web API sign-in" : "Use Spotify pairing"
+                  foreground: root.foreground
+                  enabled: root.service && !root.service.loginBusy
+                  onClicked: root.service.persistSettings({
+                    signInMethod: root.service.nativeMode ? "Web API" : "Spotify pairing" })
+                }
+              }
+              Text {
+                width: parent.width
+                visible: root.service && root.service.nativeMode && text !== ""
+                textFormat: Text.PlainText
+                text: root.service ? root.service.webAuth.lastError : ""
+                color: Theme.Color.urgent
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.caption
+                wrapMode: Text.WordWrap
               }
             }
 

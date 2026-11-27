@@ -623,6 +623,7 @@ Item {
       width: parent.width
       height: visible ? contentHeight : 0
       visible: !root.loading && root.visibleItems.length === 0
+      textFormat: Text.PlainText
       text: root.emptyMessage
       color: Theme.Color.muted
       font.family: Style.font.family

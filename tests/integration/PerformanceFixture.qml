@@ -14,7 +14,7 @@ ShellRoot {
   property bool prepared: false
   property var navigationRows: []
   property var navigationCheckpoint: []
-  Plugin.Service { id: service }
+  Plugin.Service { settings: normalizedSettings({ signInMethod: "Web API" }); id: service }
   QtObject {
     id: fakeShell
     function serviceFor(id) { return service }

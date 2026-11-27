@@ -15,6 +15,9 @@ Item {
   height: 0
 
   required property var auth
+  property var nativeSession: null
+  property string verifiedWebToken: ""
+  property string verifiedWebAccount: ""
 
   property var searchRequest: null
   property int searchSerial: 0
@@ -195,13 +198,49 @@ Item {
     }
     url = Api.appendQuery(url, job.query)
 
+    var compatibility = nativeSession && usesWebCompatibility(job)
+    if (nativeSession && !compatibility) {
+      job.sentAt = now()
+      job.activeDeadlineAt = job.sentAt + 45000
+      var finish = function(status, payload, error) {
+        if (handle.aborted || job.finished) return
+        handle.xhr = null
+        restrictInFlight = status === 429
+        if (restrictInFlight)
+          rateLimitedUntil = Api.nextRateLimitedUntil(now(), null, rateLimitedUntil, job.rateLimitRetries)
+        finishJob(job, status, payload, error, null)
+      }
+      var requestHandle = nativeSession.request(job.method, job.path, job.query, job.body, finish)
+      if (!job.finished && !handle.aborted) handle.xhr = requestHandle
+      return
+    }
+
+    var account = compatibility ? nativeSession.accountId : ""
+    if (compatibility && !account) {
+      finishJob(job, 401, null, "Log in to Spotify first", null)
+      return
+    }
     auth.withAccessToken(function(token, tokenError) {
       if (handle.aborted) {
         releaseRequestSlot(handle)
         return
       }
       if (!token) {
-        finishJob(job, 0, null, tokenError || "Not logged in", null)
+        finishJob(job, 0, null, compatibility
+          ? "Connect Spotify Web API access in Settings for listening history and audiobooks."
+          : tokenError || "Not logged in", null)
+        return
+      }
+      if (compatibility && (verifiedWebToken !== token || verifiedWebAccount !== account)) {
+        verifyWebAccount(job, token, account, sendWebRequest)
+        return
+      }
+      sendWebRequest(token)
+    })
+
+    function sendWebRequest(token) {
+      if (compatibility && (!nativeSession || nativeSession.accountId !== account)) {
+        finishJob(job, 409, null, "The Spotify account changed. Refresh and try again.", null)
         return
       }
       job.sentAt = now()
@@ -259,12 +298,52 @@ Item {
         }
         finishJob(job, 0, null, "Something went wrong while contacting Spotify", null)
       }
-    })
+    }
+  }
+
+  function verifyWebAccount(job, token, account, callback) {
+    var handle = job.handle
+    try {
+      var xhr = xhrFactory()
+      handle.xhr = xhr
+      xhr.onreadystatechange = function() {
+        if (xhr.readyState !== XMLHttpRequest.DONE || handle.xhr !== xhr) return
+        handle.xhr = null
+        if (handle.aborted || job.finished) return
+        var profile = Api.parseJson(xhr.responseText, null)
+        if (xhr.status !== 200 || !profile || !profile.id) {
+          if (xhr.status === 401) auth.invalidateAccessToken()
+          finishJob(job, xhr.status, null, "Could not verify the Spotify Web API account. Reconnect it in Settings.", xhr)
+        } else if (profile.id !== account) {
+          finishJob(job, 403, null, "Reconnect Web API access using the same Spotify account.", xhr)
+        } else {
+          verifiedWebToken = token
+          verifiedWebAccount = account
+          callback(token)
+        }
+      }
+      xhr.open("GET", Api.API_BASE + "/me")
+      xhr.setRequestHeader("Authorization", "Bearer " + token)
+      xhr.send()
+    } catch (error) {
+      handle.xhr = null
+      finishJob(job, 0, null, "Could not verify the Spotify Web API account.", null)
+    }
   }
 
   function callbackIfCurrent(job, status, payload, error, xhr) {
     if (typeof job.callback === "function")
       job.callback(status, payload, error, xhr)
+  }
+
+  function usesWebCompatibility(job) {
+    var route = Api.safeApiUrl(job.path).slice(Api.API_BASE.length)
+    var path = route.split("?")[0]
+    return /^\/(me\/(top\/(tracks|artists)|player\/recently-played|audiobooks)|audiobooks\/.*|chapters\/.*)$/.test(path)
+      || (path === "/search" && (String((job.query || {}).type || "").split(",").includes("audiobook")
+        || /[?&]type=audiobook(?:&|$)/.test(route)))
+      || (/^\/me\/library(?:\/contains)?$/.test(path)
+        && String((job.query || {}).uris || "").includes("spotify:audiobook:"))
   }
 
   function request(method, path, query, body, callback, options) {
@@ -294,6 +373,8 @@ Item {
   }
 
   function cancelAll() {
+    verifiedWebToken = ""
+    verifiedWebAccount = ""
     cancellingAll = true
     var jobs = timedJobs.slice()
     for (var i = 0; i < jobs.length; i++) abortRequest(jobs[i].handle)

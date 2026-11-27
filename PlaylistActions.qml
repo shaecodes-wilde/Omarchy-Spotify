@@ -74,6 +74,33 @@ Item {
     next()
   }
 
+  function removeOccurrence(item, playlist) {
+    if (!item || !item.uri || !host.playlistEditable(playlist) || host.playlistActionBusy) return
+    var position = item.playlistPosition
+    var revision = item.playlistSnapshot
+    if (!Number.isInteger(position) || position < 0 || !revision) {
+      host.reloadPlaylist(playlist)
+      host.fail("Reloading the playlist. Select the song again to remove this copy.")
+      return
+    }
+    var expected = host.dataSerial
+    var body = { items: [{ uri: item.uri, positions: [position] }], snapshot_id: revision }
+    host.playlistActionBusy = true
+    host.api.request("DELETE", "/playlists/" + encodeURIComponent(String(playlist.id)) + "/items",
+      null, body, function(status, payload, error) {
+        if (expected !== host.dataSerial) return
+        host.playlistActionBusy = false
+        if (error) {
+          if (status === 409 || status === 0) host.reloadPlaylist(playlist)
+          host.fail(error)
+          return
+        }
+        host.updatePlaylistSnapshot(playlist.id, payload && payload.snapshot_id)
+        host.reloadPlaylist(playlist)
+        host.succeed("Removed this copy from the playlist")
+      }, { priority: "interactive", retryRateLimit: false })
+  }
+
   function update(playlist, name, description) {
     var value = String(name || "").trim()
     if (!value || !host.playlistOwned(playlist) || host.playlistActionBusy) return

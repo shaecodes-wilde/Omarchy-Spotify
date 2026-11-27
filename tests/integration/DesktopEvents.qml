@@ -73,6 +73,7 @@ ShellRoot {
     Style.fontFamily = "DejaVu Sans"
   }
   Plugin.Service {
+    settings: normalizedSettings({ signInMethod: "Web API" })
     id: spotify
     manifest: ({__sourceDir:"/nonexistent"})
     property int playCalls: 0

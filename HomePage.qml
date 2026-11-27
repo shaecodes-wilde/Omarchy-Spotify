@@ -159,7 +159,8 @@ Item {
             : panel.service && panel.service.homeLoading
             ? "Loading your listening history…"
             : (panel.homeFilter.trim() ? "No matches in " + panel.activeSearchScope.label + "."
-              : "No listening history is available yet.")
+              : (panel.service && panel.service.historyMessage
+                ? panel.service.historyMessage : "No listening history is available yet."))
           onActivated: function(item, items, uri) {
             panel.activateMedia(item, items, uri)
           }

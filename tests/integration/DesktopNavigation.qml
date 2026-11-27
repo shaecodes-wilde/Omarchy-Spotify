@@ -46,6 +46,7 @@ ShellRoot {
   }
   function loader(name) { return findItem(panelWindow.contentItem, name) }
   Plugin.Service {
+    settings: normalizedSettings({ signInMethod: "Web API" })
     id: spotifyService
     manifest: ({__sourceDir:"/nonexistent"})
     property int receivedRestoreCount: 0

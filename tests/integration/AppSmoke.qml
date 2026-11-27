@@ -106,12 +106,57 @@ ShellRoot {
     service.api.cancelAll()
   }
 
+  function testPlaylistOccurrenceRemoval() {
+    var playlist = { id: "playlist", type: "playlist" }
+    var track = { uri: "spotify:track:dup", playlistPosition: 7, playlistSnapshot: "revision" }
+    var sent = []
+    var reloads = 0
+    var lastError = ""
+    playlistActions.host = {
+      dataSerial: 1, playlistActionBusy: false,
+      playlistEditable: function() { return true },
+      updatePlaylistSnapshot: function() {},
+      reloadPlaylist: function() { reloads++ },
+      fail: function(error) { lastError = error },
+      succeed: function() {},
+      api: { request: function(method, path, query, body, callback) {
+        sent.push({ method, path, body, callback })
+      }}
+    }
+    playlistActions.removeOccurrence(track, playlist)
+    check(sent.length === 1 && sent[0].method === "DELETE", "Single removal did not use DELETE")
+    check(JSON.stringify(sent[0].body) === JSON.stringify({
+      items: [{ uri: track.uri, positions: [7] }], snapshot_id: "revision"
+    }), "Single removal did not specify the exact occurrence and revision")
+    sent[0].callback(409, null, "Playlist changed")
+    check(reloads === 1 && lastError === "Playlist changed", "Stale removal should reload the playlist")
+    playlistActions.removeOccurrence({ uri: track.uri, playlistPosition: 7 }, playlist)
+    check(sent.length === 1 && reloads === 2, "A row without a revision must reload before removal")
+  }
+
+  function testDeviceVolumeMemory() {
+    var service = spotifyService
+    var first = { id: "first", name: "Living room" }
+    var second = { id: "second", name: "Office" }
+    service.rememberRemoteVolume(first, 24, 20)
+    service.rememberRemoteVolume(first, 80, 10)
+    check(service.lastAudibleVolumes["id:first"] === 0.24,
+      "An older receiver report must not overwrite volume memory")
+    service.rememberRemoteVolume(second, 68, 30)
+    service.rememberRemoteVolume(second, 0, 40)
+    check(service.lastAudibleVolumes["id:first"] === 0.24
+      && service.lastAudibleVolumes["id:second"] === 0.68,
+      "Each device must retain its own last audible volume")
+  }
+
+  Plugin.PlaylistActions { id: playlistActions; host: null }
+
   QtObject {
     id: scopedShell
     property var barConfig: ({ layout: { left: [{ id: "quickshell.spotify",
-      clientId: "invalid", deviceName: "Scoped receiver" }] } })
+      clientId: "invalid", signInMethod: "Web API", deviceName: "Scoped receiver" }] } })
   }
-  Plugin.Service { id: spotifyService }
+  Plugin.Service { settings: normalizedSettings({ signInMethod: "Web API" }); id: spotifyService }
   Plugin.Panel { id: panel; service: spotifyService; width: 1280; height: 800 }
   Plugin.BarWidget { id: widget }
   Timer {
@@ -146,7 +191,7 @@ ShellRoot {
           || spotifyService.deviceName !== "Scoped receiver")
         throw new Error("Scoped shell settings did not load")
       scopedShell.barConfig = { layout: { left: [{ id: "quickshell.spotify",
-        clientId: "invalid", deviceName: "Updated receiver" }] } }
+        clientId: "invalid", signInMethod: "Web API", deviceName: "Updated receiver" }] } }
       spotifyService.sessionState = { homeType: "gems" }
       panel.restoreUiState()
       if (panel.homeType !== "gems" || panel.pageCursorActions().indexOf("home-gems") < 0)
@@ -176,6 +221,8 @@ ShellRoot {
           || status.listenerMetric !== "Last.fm total listeners" || status.listenerCeiling !== 200000)
         throw new Error("Discovery diagnostics or home page did not load")
       testHiddenGemsPlayback()
+      testPlaylistOccurrenceRemoval()
+      testDeviceVolumeMemory()
       console.log("APP_SMOKE_PASS")
       Qt.quit()
     }

@@ -54,6 +54,7 @@ Item {
     fixedBarWidth: "Off",
     audioQuality: "320 kbps",
     clientId: "",
+    signInMethod: "Spotify pairing",
     lastFmUsername: "",
     lastFmApiKey: "",
     discoveryObscurity: "Obscure",
@@ -96,17 +97,20 @@ Item {
   property bool sessionFileDirty: false
   property bool pluginSessionKeysPendingStrip: false
 
-  readonly property alias auth: authManager
+  readonly property alias webAuth: authManager
+  readonly property bool nativeMode: settings.signInMethod !== "Web API"
+  readonly property var auth: nativeMode ? nativeAuth : authManager
+  property bool serviceInitialized: false
   readonly property alias api: spotifyApi
   readonly property alias daemon: daemonManager
   readonly property alias backend: backendClient
-  readonly property bool accountConnected: authManager.loggedIn
-  readonly property bool sessionPending: !authManager.sessionChecked
+  readonly property bool accountConnected: auth.loggedIn
+  readonly property bool sessionPending: !auth.sessionChecked
   readonly property bool fullyConnected: daemonManager.playbackReady
-    && authManager.loggedIn && daemonManager.credentialsAvailable
+    && auth.loggedIn && daemonManager.credentialsAvailable
   readonly property bool loginBusy: daemonManager.setupBusy
-    || authManager.loginBusy
-    || authManager.sessionBusy || !authManager.sessionChecked
+    || auth.loginBusy || (nativeMode && authManager.loginBusy)
+    || auth.sessionBusy || !auth.sessionChecked
     || daemonManager.authenticationBusy || daemonManager.credentialsClearBusy
     || !daemonManager.credentialsChecked || !daemonManager.requirementsChecked
   readonly property string loginProgress: loginProgressText()
@@ -119,6 +123,7 @@ Item {
   property var remotePlaybackWaiters: []
   property var rememberedRemoteVolumeDevice: null
   property real rememberedRemoteVolumePercent: -1
+  property double rememberedRemoteVolumeAt: 0
   property var pendingRemoteSeek: null
   property var pendingRemoteVolume: null
   property real pendingSliderVolume: -1
@@ -277,7 +282,7 @@ Item {
   readonly property bool currentTrackSaveBusy: currentTrackSaveChecking
     || isSavedBusy(currentTrackItem)
   readonly property bool currentTrackSaveAvailable: !!currentTrackItem
-    && authManager.loggedIn && !currentTrackSaveBusy
+    && auth.loggedIn && !currentTrackSaveBusy
   readonly property bool playbackRestricted: useRemotePlayback
     && remoteDevice && remoteDevice.restricted === true
   readonly property var sonosControlDevice: findSonosControlDevice()
@@ -409,6 +414,7 @@ Item {
   readonly property var topAlbums: Api.topAlbumsFromTracks(topTracks)
   property bool homeLoaded: false
   property int homeRequestsPending: 0
+  property string historyMessage: ""
   readonly property bool homeLoading: homeRequestsPending > 0
 
   property var discoverPlaylists: []
@@ -609,8 +615,10 @@ Item {
   function loginProgressText() {
     if (daemonManager.setupBusy) return "Preparing playback on this computer"
     if (daemonManager.credentialsClearBusy) return "Signing out"
-    if (authManager.loginBusy) return "Approve Spotify access in your browser"
-    if (authManager.sessionBusy || !authManager.sessionChecked)
+    if (auth.loginBusy) return nativeMode && nativeAuth.pairingCode
+      ? "Enter " + nativeAuth.pairingCode + " on Spotify" : "Approve Spotify access in your browser"
+    if (nativeMode && authManager.loginBusy) return "Approve Spotify Web API access in your browser"
+    if (auth.sessionBusy || !auth.sessionChecked)
       return "Checking your saved Spotify session"
     if (!daemonManager.requirementsChecked || !daemonManager.credentialsChecked)
       return "Checking local playback"
@@ -632,7 +640,7 @@ Item {
     var keys = ["deviceName", "idleShutdownMinutes", "showMiniPlayer",
       "showVinylRecord", "shortcutPlayer", "shortcutHints", "showLyrics", "showArtwork", "showTrackTitle", "showArtistName",
       "showPausedTrack", "scrollBarText", "scrollSpeed", "maxBarTextWidth",
-      "fixedBarWidth", "audioQuality", "clientId", "lastFmUsername", "lastFmApiKey",
+      "fixedBarWidth", "audioQuality", "clientId", "signInMethod", "lastFmUsername", "lastFmApiKey",
       "discoveryObscurity", "discoveryAdventure", "trackDensity", "trackColumns"]
     for (var i = 0; i < keys.length; i++) {
       var key = keys[i]
@@ -671,6 +679,7 @@ Item {
     next.clientId = customClientId.toLowerCase()
     next.lastFmUsername = String(next.lastFmUsername || "").trim()
     next.lastFmApiKey = String(next.lastFmApiKey || "").trim()
+    next.signInMethod = next.signInMethod === "Web API" ? "Web API" : "Spotify pairing"
     if (next.discoveryObscurity === "Balanced") next.discoveryObscurity = "Obscure"
     if (["Obscure", "Underground", "Deep underground"].indexOf(next.discoveryObscurity) < 0)
       next.discoveryObscurity = "Obscure"
@@ -700,6 +709,7 @@ Item {
   }
 
   function applySettings(values) {
+    if (!values || Object.keys(values).length === 0) return
     var previousDeviceName = deviceName
     var next = normalizedSettings(values)
     if (JSON.stringify(next) !== JSON.stringify(settings)) settings = next
@@ -816,7 +826,7 @@ Item {
   }
 
   function syncSettings() {
-    applySettings(configuredEntry() || {})
+    applySettings(configuredEntry())
     reconcileSessionPersistence()
     resumeLyricsInstallIntent()
   }
@@ -1138,13 +1148,17 @@ Item {
       + "|" + String(item.type || "").trim().toLowerCase()
   }
 
-  function rememberRemoteVolume(device, value) {
+  function rememberRemoteVolume(device, value, observedAt) {
     var volumePercent = Api.normalizeVolumePercent(value)
     if (!device || volumePercent === null) return false
+    var timestamp = observedAt === undefined ? Date.now() : observedAt
+    if (rememberedRemoteVolumeDevice && Api.playbackDevicesMatch(rememberedRemoteVolumeDevice, device)
+        && timestamp < rememberedRemoteVolumeAt) return false
     if (Api.shouldRememberVolume(volumePercent / 100)
         && !(Api.pendingRemoteDeviceMatches(pendingRemoteVolume, device, Date.now())
           && volumePercent !== pendingRemoteVolume.volumePercent))
       lastAudibleVolumes[playbackDeviceKey(device)] = volumePercent / 100
+    rememberedRemoteVolumeAt = timestamp
     rememberedRemoteVolumePercent = volumePercent
     rememberedRemoteVolumeDevice = {
       id: String(device.id || ""),
@@ -1171,7 +1185,7 @@ Item {
     var receiver = findDiscoveredReceiver(device)
     if (!receiver || String(receiver.brand || "").toLowerCase() !== "sonos")
       return false
-    return rememberRemoteVolume(device, receiver.volumePercent)
+    return rememberRemoteVolume(device, receiver.volumePercent, receiver.volumeObservedAt || 0)
   }
 
   function remoteControlDeviceSnapshot(device) {
@@ -1318,8 +1332,8 @@ Item {
         localRuntimeDeviceName = device.name
       }
       reconcilePendingRemoteControls(state)
-      if (!rememberDiscoveredReceiverVolume(device))
-        rememberRemoteVolume(device, device.volumePercent)
+      if (device.restricted || !rememberRemoteVolume(device, device.volumePercent))
+        rememberDiscoveredReceiverVolume(device)
     }
     remotePlayback = state
     verifyRadioPlaybackContext()
@@ -1400,7 +1414,7 @@ Item {
   // network request; the explicit refresh control can still force one.
   function openView(view, force) {
     activeView = normalizedView(view)
-    if (!authManager.loggedIn && !authManager.tokenIsFresh()) return
+    if (!auth.loggedIn && !auth.tokenIsFresh()) return
     if (activeView === "home") {
       if (force || !homeLoaded) loadHome()
       if (selectedHomeTab === "gems") loadHiddenGems(force)
@@ -1532,12 +1546,15 @@ Item {
         && contextHref.indexOf("/playlists/" + expectedPlaylist.id) >= 0)
   }
 
-  // Restore the keyring-backed session only when a Spotify API surface is
-  // actually opened. This avoids a network request when the widget is merely
-  // sitting on the bar and local MPRIS controls are sufficient.
   function activate(view) {
     activeView = normalizedView(view)
-    authManager.withAccessToken(function(token, error) {
+    if (nativeMode && (!auth.loggedIn || !auth.sessionChecked)) {
+      if (!auth.loggedIn) nativeAuth.restoreSession()
+      return
+    }
+    var expected = auth
+    auth.withAccessToken(function(token, error) {
+      if (expected !== root.auth || daemonManager.credentialsClearBusy) return
       if (token) {
         root.loadPlaybackState()
         root.loadProfile()
@@ -1828,7 +1845,7 @@ Item {
 
   function syncCurrentTrackSaved(force) {
     var item = currentTrackItem
-    if (!uiVisible || !authManager.loggedIn || !item) return
+    if (!uiVisible || !auth.loggedIn || !item) return
     checkSavedItems([item], force === true)
   }
 
@@ -2004,11 +2021,12 @@ Item {
           ? Math.max(0, Math.floor(responseOffset)) : fallbackPosition
         var page = Api.normalizePage(payload, function(value) {
           return Api.normalizePlaylistEntry(value, nextPlaylistPosition++,
-            payload.snapshot_id || root.selectedPlaylist.snapshotId)
+            (payload && payload.snapshot_id) || root.selectedPlaylist.snapshotId)
         })
         // A playlist can intentionally contain the same track more than
         // once. Preserve every occurrence so visible indexes continue to
         // match the positions accepted by Spotify's reorder endpoint.
+        if (payload && payload.snapshot_id) root.updatePlaylistSnapshot(playlistId, payload.snapshot_id)
         root.playlistItemsError = ""
         root.playlistItemsStatus = status
         var playlistPage = Api.playlistPageState(root.playlistItems, page.items,
@@ -2095,8 +2113,8 @@ Item {
       openDetail(detailItem, "", restoredDetailItemCount)
   }
 
-  function removePlaylistItem(item, index, playlist) {
-    removePlaylistItems([item], playlist)
+  function removePlaylistOccurrence(item, playlist) {
+    if (nativeMode) playlistActions.removeOccurrence(item, playlist || selectedPlaylist)
   }
 
 
@@ -2356,6 +2374,8 @@ Item {
         root.fail(error)
         return
       }
+      if (type === "playlist" && payload && payload.snapshot_id)
+        root.updatePlaylistSnapshot(parent.id, payload.snapshot_id)
       var page = root.detailPageFromPayload(payload, type, parent)
       root.detailItems = (type === "playlist"
         ? root.detailItems.concat(page.items)
@@ -2431,7 +2451,10 @@ Item {
 
   function finishHomeRequest(error) {
     homeRequestsPending = Math.max(0, homeRequestsPending - 1)
-    if (error) fail(error)
+    if (error) {
+      if (nativeMode) historyMessage = error
+      else fail(error)
+    }
     if (homeRequestsPending === 0) {
       homeLoaded = true
       checkSavedItems(recentTracks.concat(topTracks).concat(topArtists).concat(topAlbums))
@@ -2442,6 +2465,7 @@ Item {
     if (homeLoading) return
     var expected = dataSerial
     homeLoaded = false
+    historyMessage = ""
     homeRequestsPending = 3
     spotifyApi.request("GET", "/me/player/recently-played", { limit: 30 }, null,
       function(status, payload, error) {
@@ -2594,10 +2618,11 @@ Item {
     var current = remoteDevice && remoteDevice.active === true ? remoteDevice : null
     var currentVolume = Api.normalizeVolumePercent(
       current ? current.volumePercent : null)
-    var localVolumePreferred = current
-      ? rememberDiscoveredReceiverVolume(current) : false
-    if (current && !localVolumePreferred && currentVolume !== null)
-      rememberRemoteVolume(current, currentVolume)
+    if (current && (!rememberedRemoteVolumeDevice
+        || !Api.playbackDevicesMatch(rememberedRemoteVolumeDevice, current))) {
+      if (!rememberDiscoveredReceiverVolume(current) && currentVolume !== null)
+        rememberRemoteVolume(current, currentVolume)
+    }
     var currentMatched = false
     var localById = ({})
     for (var i = 0; i < local.length; i++) localById[String(local[i].id || "")] = local[i]
@@ -2627,7 +2652,8 @@ Item {
           // /me/player is the freshest source for the active receiver. The
           // separately cached device list is only a fallback when that value
           // is unknown; otherwise it can undo an accepted volume command.
-          if (!localVolumePreferred && currentVolume === null)
+          if (currentVolume === null && (!rememberedRemoteVolumeDevice
+              || !Api.playbackDevicesMatch(rememberedRemoteVolumeDevice, current)))
             rememberRemoteVolume(current, apiDevice.volumePercent)
           apiDevice.restricted = current.restricted === true
           apiDevice.volumePercent = displayedRemoteVolumePercent(current)
@@ -2870,6 +2896,17 @@ Item {
     pendingConnectWakeTried = false
     if (Api.spotifyConnectTokenType(device.tokenType) !== "default") {
       statusMessage = "Checking permission for " + device.name
+      if (nativeMode) {
+        nativeAuth.withStreamingToken(function(token, error) {
+          if (root.pendingConnectDeviceId !== device.id || !root.nativeMode) return
+          if (token) spotifyConnectManager.activate(device.id, token)
+          else {
+            root.pendingConnectDeviceId = ""
+            root.fail(error || "Spotify could not authorize this speaker")
+          }
+        })
+        return
+      }
       connectAuthManager.withAccessToken(function(token, error) {
         if (root.pendingConnectDeviceId !== device.id) return
         if (token) {
@@ -3341,7 +3378,7 @@ Item {
 
   function loadResumeCandidate(force) {
     if (resumeCandidateLoading) return
-    if (!authManager.loggedIn && !authManager.tokenIsFresh()) return
+    if (!auth.loggedIn && !auth.tokenIsFresh()) return
     if (force !== true && resumeCandidateLoadedAt > 0
         && Date.now() - resumeCandidateLoadedAt < 30000) return
     var expected = dataSerial
@@ -3584,23 +3621,34 @@ Item {
   }
 
   function login() {
-    if (authManager.loginBusy || authManager.sessionBusy
+    if (auth.loginBusy || auth.sessionBusy
         || daemonManager.setupBusy || daemonManager.authenticationBusy) return
     noteActivity()
     lastError = ""
     statusClearTimer.stop()
     statusMessage = ""
     loginFlowActive = true
-    if (!authManager.loggedIn) {
-      authManager.beginLogin()
+    if (nativeMode) {
+      continueLocalPlaybackSetup()
+      return
+    }
+    if (!auth.loggedIn) {
+      auth.beginLogin()
       return
     }
     continueLocalPlaybackSetup()
   }
 
   function continueLocalPlaybackSetup() {
-    if (!daemonManager.playbackReady) {
+    if (!daemonManager.playbackReady || (nativeMode && daemonManager.usingFallbackRuntime)) {
       daemonManager.setupPlayback()
+      return
+    }
+    if (nativeMode) {
+      if (nativeAuth.loggedIn) {
+        daemonManager.checkCredentials()
+        finishLoginFlow()
+      } else beginNativePairing()
       return
     }
     if (!daemonManager.credentialsAvailable) {
@@ -3610,11 +3658,21 @@ Item {
     finishLoginFlow()
   }
 
+  function beginNativePairing() {
+    if (daemonManager.running) stopEngine()
+    nativeAuth.beginLogin()
+  }
+
+  function connectWebAccess() {
+    if (nativeMode) authManager.beginLogin()
+  }
+
   function cancelLogin() {
     loginFlowActive = false
     lastError = ""
     statusMessage = ""
-    authManager.cancelLogin()
+    auth.cancelLogin()
+    if (nativeMode) authManager.cancelLogin()
     connectAuthManager.cancelLogin()
     daemonManager.cancelAuthentication()
   }
@@ -3626,7 +3684,10 @@ Item {
     statusClearTimer.stop()
     statusMessage = ""
     loginFlowActive = true
-    authManager.beginLogin()
+    if (nativeMode) {
+      if (nativeAuth.enabled) beginNativePairing()
+      else continueLocalPlaybackSetup()
+    } else auth.beginLogin()
   }
 
   function finishLoginFlow() {
@@ -3645,6 +3706,7 @@ Item {
     clearPendingPlayback()
     deviceProbeTimer.stop()
     spotifyApi.cancelSearch()
+    if (nativeMode) nativeAuth.logout()
     daemonManager.clearCredentials()
     connectAuthManager.logout()
     authManager.logout()
@@ -3701,6 +3763,7 @@ Item {
     lastAudibleVolumes = ({})
     rememberedRemoteVolumeDevice = null
     rememberedRemoteVolumePercent = -1
+    rememberedRemoteVolumeAt = 0
     pendingRemoteSeek = null
     pendingRemoteVolume = null
     clearPendingSliderVolume()
@@ -3735,6 +3798,7 @@ Item {
     topTracks = []
     topArtists = []
     homeLoaded = false
+    historyMessage = ""
     homeRequestsPending = 0
     discoverSerial++
     discoverPlaylists = []
@@ -3782,6 +3846,16 @@ Item {
     cancelSleepTimer(false)
   }
 
+  onNativeModeChanged: {
+    if (!serviceInitialized) return
+    dataSerial++
+    loginFlowActive = false
+    authManager.cancelLogin()
+    if (!nativeMode) nativeAuth.suspend()
+    spotifyApi.cancelAll()
+    clearData()
+    if (uiVisible) Qt.callLater(function() { root.activate(root.activeView) })
+  }
   onPlayingChanged: noteActivity()
   onPlaybackStateChanged: {
     if ((sleepMode === "context" || sleepMode === "track")
@@ -3797,6 +3871,7 @@ Item {
   onShellChanged: settingsSync.restart()
   onUiVisibleChanged: {
     if (uiVisible) {
+      if (nativeMode && !nativeAuth.loggedIn) nativeAuth.restoreSession()
       ensureVisibleLocalReceiver()
       syncCurrentTrackSaved(true)
       updateSleepCountdown()
@@ -3814,6 +3889,7 @@ Item {
   }
 
   Component.onCompleted: {
+    serviceInitialized = true
     ensureStateDir.running = true
     settingsSync.start()
     daemonManager.refreshStatus()
@@ -3827,8 +3903,14 @@ Item {
   }
 
   Connections {
-    target: authManager
+    target: root.auth
     function onLoginSucceeded() {
+      if (root.nativeMode) {
+        daemonManager.checkCredentials()
+        root.finishLoginFlow()
+        if (root.localActivationRequested) deviceProbeTimer.restart()
+        return
+      }
       root.syncCurrentTrackSaved(true)
       var continueSetup = root.loginFlowActive && (!root.daemon.playbackReady
         || !root.daemon.credentialsAvailable)
@@ -3841,12 +3923,25 @@ Item {
       if (root.localActivationRequested) deviceProbeTimer.restart()
     }
     function onLoggedOut() {
+      root.dataSerial++
       spotifyApi.cancelAll()
       root.clearData()
     }
     function onSessionUnavailable(reason) {
       root.loginFlowActive = false
       if (reason) root.lastError = root.safeError(reason)
+    }
+  }
+
+  Connections {
+    target: root.nativeMode ? authManager : null
+    function onLoginSucceeded() {
+      root.homeLoaded = false
+      root.resumeCandidateLoadedAt = 0
+      if (root.uiVisible && root.accountConnected) {
+        root.openView(root.activeView, true)
+        root.loadResumeCandidate(true)
+      }
     }
   }
 
@@ -3889,6 +3984,8 @@ Item {
   Connections {
     target: spotifyConnectManager
     function onRefreshed() {
+      if (root.remoteDevice && root.remoteDevice.restricted)
+        root.rememberDiscoveredReceiverVolume(root.remoteDevice)
       var error = root.pendingDeviceLoadError
       root.pendingDeviceLoadError = ""
       root.finishDeviceLoad(null, error)
@@ -4194,6 +4291,14 @@ Item {
       root.finishSleepTimer()
   }
 
+  NativeSession {
+    id: nativeAuth
+    pluginDir: root.pluginDir
+    enabled: root.nativeMode && daemonManager.playbackReady && !daemonManager.usingFallbackRuntime
+    wanted: false
+    onEnabledChanged: if (enabled && root.uiVisible && !root.loginFlowActive) restoreSession()
+  }
+
   AuthManager {
     id: authManager
     pluginDir: root.pluginDir
@@ -4211,6 +4316,7 @@ Item {
   SpotifyApi {
     id: spotifyApi
     auth: authManager
+    nativeSession: root.nativeMode ? nativeAuth : null
   }
 
   SpotifyConnectManager {
@@ -4224,6 +4330,7 @@ Item {
     deviceName: root.deviceName
     bitrateKbps: root.bitrateKbps
     mprisPresent: root.hasLocalPlayer
+    requireNative: root.nativeMode
   }
 
   BackendClient {

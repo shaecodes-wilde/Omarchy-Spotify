@@ -20,6 +20,7 @@ Item {
   property string activatingDeviceId: ""
   property string activationInput: ""
   property string discoveryResult: ""
+  property double discoveryStartedAt: 0
   property string activationResult: ""
   property bool controlling: false
   property string controllingDeviceId: ""
@@ -51,6 +52,7 @@ Item {
     loading = true
     lastError = ""
     discoveryResult = ""
+    discoveryStartedAt = Date.now()
     discoveryCommand.command = [pluginDir + "/scripts/spotify-connect-device.py", "discover"]
     discoveryCommand.running = true
   }
@@ -106,6 +108,7 @@ Item {
       }
       var updated = Api.shallowCopy(item)
       updated.volumePercent = volume
+      updated.volumeObservedAt = Date.now()
       changed = true
       next.push(updated)
     }
@@ -134,6 +137,7 @@ Item {
         activationRequired: true,
         activeUser: item.activeUser === true,
         volumePercent: Api.normalizeVolumePercent(item.volumePercent),
+        volumeObservedAt: discoveryStartedAt,
         tokenType: Api.spotifyConnectTokenType(item.tokenType)
       })
     }

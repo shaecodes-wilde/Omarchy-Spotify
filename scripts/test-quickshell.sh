@@ -95,6 +95,12 @@ sed 's|import "../.." as Plugin|import "." as Plugin|' \
   "$source_root/tests/integration/AuthIdentity.qml" > "$test_root/shell.qml"
 run_native "$test_root" AUTH_IDENTITY_PASS authorization
 
+mkdir -p "$test_root/native/scripts"
+cp "$source_root/"{NativeSession.qml,Api.js} "$test_root/native/"
+cp "$source_root/tests/integration/NativeSession.qml" "$test_root/native/shell.qml"
+install -m 755 "$source_root/tests/fixtures/native-session.py" "$test_root/native/scripts/native-session.sh"
+run_native "$test_root/native" NATIVE_SESSION_PASS 'native pairing and session'
+
 cp "$source_root/"*.qml "$source_root/"*.js "$test_root/app/plugin/"
 cp -r /usr/share/omarchy/shell/Commons /usr/share/omarchy/shell/Ui "$test_root/app/"
 cp "$source_root/tests/integration/AppSmoke.qml" "$test_root/app/shell.qml"

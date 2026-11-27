@@ -275,7 +275,10 @@ fn open_runtime_cache(config: &BackendConfig) -> Result<Cache> {
     .context("failed to open the playback cache")
 }
 
-fn load_credentials(credentials_root: &Path, legacy_cache_root: &Path) -> Result<Credentials> {
+pub(crate) fn load_credentials(
+    credentials_root: &Path,
+    legacy_cache_root: &Path,
+) -> Result<Credentials> {
     let oauth_path = credentials_root.join("oauth");
     let oauth_cache = Cache::new(Some(oauth_path.as_path()), None, None, None)
         .context("failed to open the OAuth credential store")?;
