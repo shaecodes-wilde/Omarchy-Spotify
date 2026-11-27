@@ -1,5 +1,6 @@
 import QtQuick
 import qs.Commons
+import qs.Commons as Theme
 import qs.Ui
 
 import "Api.js" as Api
@@ -8,10 +9,11 @@ BorderSurface {
   id: root
 
   required property var itemData
-  property color foreground: Color.foreground
-  property color accent: Color.accent
-  property color muted: Color.muted
+  property color foreground: Theme.Color.foreground
+  property color accent: Theme.Color.accent
+  property color muted: Theme.Color.muted
   property string fontFamily: Style.font.family
+  enabled: !!itemData && itemData.kind !== "unavailable"
   property bool selected: false
   property bool showPlay: true
   property bool showQueue: false
@@ -48,32 +50,36 @@ BorderSurface {
     && ["track", "episode"].indexOf(itemData.type) >= 0
   readonly property bool queueActionVisible: showQueue && itemData
     && ["track", "episode"].indexOf(itemData.type) >= 0
-  readonly property bool playActionVisible: showPlay && itemData
+  readonly property bool playActionVisible: enabled && showPlay && itemData
     && ["show", "audiobook"].indexOf(itemData.type) < 0
   readonly property int fullActionCount: (durationActionVisible ? 1 : 0)
     + (saveActionVisible ? 1 : 0) + (playlistActionVisible ? 1 : 0)
     + (queueActionVisible ? 1 : 0) + (playActionVisible ? 1 : 0)
   // Keep overflow measurements stable without constructing hidden action controls.
-  TextMetrics {
+  Text {
     id: toggleMetrics
+    visible: false
+    textFormat: Text.PlainText
     text: actionToggle.iconText
     font.family: actionToggle.fontFamily
     font.pixelSize: actionToggle.iconSize
   }
-  readonly property real actionButtonInsets: actionToggle.implicitWidth - toggleMetrics.advanceWidth
+  readonly property real actionButtonInsets: actionToggle.implicitWidth - toggleMetrics.implicitWidth
   component RowAction: Loader {
     id: action
     required property string glyph
     property string tip: ""
     property color foreground: root.foreground
-    property color accent: Color.accent
-    readonly property real fullWidth: metrics.advanceWidth + root.actionButtonInsets
+    property color accent: Theme.Color.accent
+    readonly property real fullWidth: metrics.implicitWidth + root.actionButtonInsets
     signal triggered()
     active: visible
     width: fullWidth
     height: item ? item.implicitHeight : 0
-    TextMetrics {
+    Text {
       id: metrics
+      visible: false
+      textFormat: Text.PlainText
       text: action.glyph
       font.family: actionToggle.fontFamily
       font.pixelSize: actionToggle.iconSize
@@ -116,11 +122,12 @@ BorderSurface {
   signal selectionRequested(int modifiers)
 
   function triggerPrimary() {
+    if (!enabled) return
     if (browseOnActivate) openRequested(itemData)
     else activated(itemData)
   }
 
-  function triggerPlay() { activated(itemData) }
+  function triggerPlay() { if (enabled) activated(itemData) }
 
   onItemDataChanged: actionsExpanded = false
   onCompactActionsChanged: if (!compactActions) actionsExpanded = false
@@ -138,7 +145,7 @@ BorderSurface {
   borderSpec: selected || reorderDragging
     ? Border.controlSpec("selected", foreground, accent)
     : Border.none()
-  opacity: reorderDragging ? 0.55 : 1
+  opacity: !enabled || reorderDragging ? 0.55 : 1
   clip: true
 
   HoverHandler { id: hoverHandler }
@@ -375,8 +382,8 @@ BorderSurface {
         objectName: "media-row-save"
         visible: root.saveActionVisible
         glyph: "󰋑"
-        foreground: Color.urgent
-        accent: Color.urgent
+        foreground: Theme.Color.urgent
+        accent: Theme.Color.urgent
         tip: "Save to library"
         onTriggered: root.saveRequested(root.itemData)
       }

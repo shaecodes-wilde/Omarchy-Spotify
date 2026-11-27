@@ -222,22 +222,27 @@ omarchy shell -q quickshell.spotify.player volumeDown
 Each step is 5%, the same as Ctrl+Up / Ctrl+Down. This changes Spotify's own
 volume, including speakers, not the computer's output level.
 
-Click the Spotify icon on the left side of the bar. The mini-player asks you
-to **Set up and continue**, then Spotify sign-in finishes in your browser. You
-can move the widget later with Omarchy's bar controls.
+Click the Spotify icon on the left side of the bar, open the player, and select
+**Log in with Spotify**. Approve pairing in your browser. The player uses one
+saved Spotify session for browsing, playlists, and local playback. Existing
+playback credentials can restore that session automatically. Spotify Premium
+is required.
+
+Listening history, top rankings, and audiobooks use optional Spotify Web API
+access. In **Settings → Spotify Web API access**, connect the same Spotify
+account. The older Web API sign-in flow is also available there.
 
 Local playback installs an exact-version backend only after its GitHub build
 provenance matches this plugin version's tag and the checkout's backend inputs
 still match that tagged source. If verification is unavailable, setup builds
-the locked Rust source locally or offers Omarchy's packaged `spotifyd` fallback
-instead of executing an unverified download.
+the locked Rust source locally. The older Web API sign-in flow can use
+Omarchy's packaged `spotifyd` as a playback fallback.
 
 ## Seeing "Spotify is busy." or slow searches?
 
-The plugin's Spotify Web API client ID is shared by every install worldwide,
-and Spotify rate-limits requests **per app**, not per user. When that shared
-quota runs out you see `Spotify is busy. Try again in N seconds.` and searches
-that stall even though nothing is wrong on your side.
+Spotify rate-limits Web API requests per application. If you use optional
+Web API access or the older sign-in flow, hitting the shared client quota can
+trigger `Spotify is busy. Try again in N seconds.`
 
 You can use a personal [Spotify Developer app](https://developer.spotify.com/dashboard)
 with a separate quota. This does not provide unlimited requests or restore restricted endpoints.
@@ -245,12 +250,11 @@ with a separate quota. This does not provide unlimited requests or restore restr
 1. Add `http://127.0.0.1:8989/login` as the app's redirect URI.
 2. Set **Spotify Developer app client ID** in the plugin settings. Leave it empty
    to use the shipped app. Invalid IDs produce an error.
-3. Authorize the selected app. Changing the ID clears the current session and
-   account data; stored sessions are isolated by client ID.
+3. Authorize the selected app. Changing the ID resets the Web API connection.
+   Saved Web API sessions are isolated by client ID.
 
 Development apps require an eligible Premium owner and allowlisted users, and
 have endpoint restrictions. See Spotify's [quota modes](https://developer.spotify.com/documentation/web-api/concepts/quota-modes).
-The local Connect authorization remains separate.
 
 ## Remove it completely
 

@@ -8,6 +8,7 @@ ShellRoot {
   property string uri: "spotify:track:example"
   function check(value, message) { if (!value) throw new Error(message) }
   Plugin.Service {
+    settings: normalizedSettings({ signInMethod: "Web API" })
     id: service
     function ensureVisibleLocalReceiver() {}
     function syncCurrentTrackSaved(force) {}

@@ -42,6 +42,7 @@ ShellRoot {
     return null
   }
   Plugin.Service {
+    settings: normalizedSettings({ signInMethod: "Web API" })
     id: spotify
     manifest: ({__sourceDir:"/nonexistent"})
     property var createRequests: []

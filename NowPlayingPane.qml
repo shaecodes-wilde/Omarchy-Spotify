@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Controls
 import qs.Commons
+import qs.Commons as Theme
 import qs.Ui
 import "Navigation.js" as Navigation
 
@@ -77,7 +78,7 @@ ScrollView {
       Button {
         text: pane.service && pane.service.currentTrackSaved ? "Liked" : "Like"
         iconText: pane.service && pane.service.currentTrackSaved ? "󰋑" : "󰋕"
-        foreground: Color.urgent
+        foreground: Theme.Color.urgent
         enabled: pane.service && pane.service.currentTrackSaveAvailable
         onClicked: pane.service.toggleCurrentTrackSaved()
       }

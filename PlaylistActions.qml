@@ -74,6 +74,33 @@ Item {
     next()
   }
 
+  function removeOccurrence(item, playlist) {
+    if (!item || !item.uri || !host.playlistEditable(playlist) || host.playlistActionBusy) return
+    var position = item.playlistPosition
+    var revision = item.playlistSnapshot
+    if (!Number.isInteger(position) || position < 0 || !revision) {
+      host.reloadPlaylist(playlist)
+      host.fail("Reloading the playlist. Select the song again to remove this copy.")
+      return
+    }
+    var expected = host.dataSerial
+    var body = { items: [{ uri: item.uri, positions: [position] }], snapshot_id: revision }
+    host.playlistActionBusy = true
+    host.api.request("DELETE", "/playlists/" + encodeURIComponent(String(playlist.id)) + "/items",
+      null, body, function(status, payload, error) {
+        if (expected !== host.dataSerial) return
+        host.playlistActionBusy = false
+        if (error) {
+          if (status === 409 || status === 0) host.reloadPlaylist(playlist)
+          host.fail(error)
+          return
+        }
+        host.updatePlaylistSnapshot(playlist.id, payload && payload.snapshot_id)
+        host.reloadPlaylist(playlist)
+        host.succeed("Removed this copy from the playlist")
+      }, { priority: "interactive", retryRateLimit: false })
+  }
+
   function update(playlist, name, description) {
     var value = String(name || "").trim()
     if (!value || !host.playlistOwned(playlist) || host.playlistActionBusy) return
@@ -218,10 +245,12 @@ Item {
       && String(host.detailItem.id || "") === playlistId
     var orderingItems = Array.isArray(sourceItems) ? sourceItems
       : (selectedMatches ? host.playlistItems : (detailMatches ? host.detailItems : []))
+    var sourceRow = orderingItems[sourceIndex]
+    var revision = (sourceRow && sourceRow.playlistSnapshot) || target.snapshotId
     var body = orderingItems.length
       ? Api.playlistReorderBodyForItems(orderingItems, sourceIndex,
         destinationIndex, Math.max(length, Number(target.total) || 0),
-        target.snapshotId)
+        revision)
       : Api.playlistReorderBody(sourceIndex, destinationIndex, length,
         target ? target.snapshotId : "")
     if (!body) return
@@ -256,6 +285,8 @@ Item {
           return
         }
         host.updatePlaylistSnapshot(target.id, payload && payload.snapshot_id)
+        if (sourceRow && sourceRow.playlistSnapshot !== (payload && payload.snapshot_id))
+          host.reloadPlaylist(target)
         host.succeed("Playlist order updated")
       }, { priority: "interactive", retryRateLimit: false })
   }

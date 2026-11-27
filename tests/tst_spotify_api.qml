@@ -87,6 +87,39 @@ TestCase {
     failSend = false
   }
 
+  function test_nativeRoutesAndVerifiedWebHistory() {
+    var api = createTemporaryObject(apiComponent, testCase)
+    api.nativeSession = {
+      accountId: "same-account",
+      request: function(method, path, query, body, callback) {
+        callback(200, { path: path }, "")
+        return { abort: function() {} }
+      }
+    }
+    var result = null
+    function completed(status, payload, error) { result = { status, payload, error } }
+    api.request("GET", "/me/playlists", null, null, completed)
+    compare(result.payload.path, "/me/playlists")
+    compare(requests.length, 0)
+
+    api.request("GET", "/me/player/recently-played", null, null, completed)
+    verify(requests[0].url.endsWith("/me"))
+    complete(requests[0], 200, '{"id":"wrong-account"}')
+    compare(result.status, 403)
+    compare(requests.length, 1)
+
+    api.request("GET", "/me/top/tracks", null, null, completed)
+    complete(requests[1], 200, '{"id":"same-account"}')
+    verify(requests[2].url.endsWith("/me/top/tracks"))
+    complete(requests[2], 200, '{"items":[{"id":"track"}]}')
+    compare(result.payload.items[0].id, "track")
+
+    api.request("GET", "/me/top/artists", null, null, completed)
+    verify(requests[3].url.endsWith("/me/top/artists"))
+    complete(requests[3], 200)
+    compare(api.requestsInFlight, 0)
+  }
+
   function test_priorityStartsMutationsThenInteractiveReads() {
     var api = createTemporaryObject(apiComponent, testCase)
     verify(api)

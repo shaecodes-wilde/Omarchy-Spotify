@@ -2,6 +2,9 @@
 set -euo pipefail
 
 source_root=$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
+if [[ ${1:-} == --require-native ]]; then
+  exec "$source_root/scripts/setup.sh" --require-native
+fi
 
 # Plugin installs intentionally do not run hooks. Prefer the verified or
 # source-built plugin backend, and retain Arch spotifyd as a no-build fallback.

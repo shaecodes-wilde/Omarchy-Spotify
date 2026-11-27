@@ -79,14 +79,31 @@ Item {
             KeyHint { region: "page"; action: "gem-refresh" }
             onClicked: if (panel.service) panel.service.loadHiddenGems(true)
           }
-          Button {
-            text: "Last.fm settings"
-            foreground: panel.foreground
-            focusable: false
-            hasCursor: panel.cursorOn("page", "gem-settings")
-            onHovered: function(on) { if (on) panel.setPanelCursor("page", "gem-settings") }
-            KeyHint { region: "page"; action: "gem-settings" }
-            onClicked: panel.chooseTab("setup")
+          Row {
+            spacing: gemControls.spacing
+            Button {
+              text: "Last.fm settings"
+              foreground: panel.foreground
+              focusable: false
+              hasCursor: panel.cursorOn("page", "gem-settings")
+              onHovered: function(on) { if (on) panel.setPanelCursor("page", "gem-settings") }
+              KeyHint { region: "page"; action: "gem-settings" }
+              onClicked: panel.chooseTab("setup")
+            }
+            Button {
+              objectName: "gem-play"
+              iconText: "󰐊"
+              foreground: panel.foreground
+              tooltipText: "Play Hidden gems from the top · shuffle off"
+              enabled: panel.service && !panel.service.discovery.loading && homeCollectionLoader.item && homeCollectionLoader.item.listCount > 0
+              focusable: false
+              Accessible.role: Accessible.Button
+              Accessible.name: "Play Hidden gems from the top"
+              hasCursor: panel.cursorOn("page", "gem-play")
+              onHovered: function(on) { if (on) panel.setPanelCursor("page", "gem-play") }
+              KeyHint { region: "page"; action: "gem-play" }
+              onClicked: panel.playHiddenGems()
+            }
           }
         }
         Text {
@@ -110,6 +127,7 @@ Item {
         }
 
         Loader {
+          id: homeCollectionLoader
           width: parent.width
           height: active ? Math.max(40, parent.height - homeTypes.height - (gemControls.visible ? gemControls.height : 0) - (gemStatus.visible ? gemStatus.height : 0) - parent.spacing * (panel.homeType === "gems" ? 3 : 1)) : 0
           active: panel.homeType !== "overview"
@@ -141,7 +159,8 @@ Item {
             : panel.service && panel.service.homeLoading
             ? "Loading your listening history…"
             : (panel.homeFilter.trim() ? "No matches in " + panel.activeSearchScope.label + "."
-              : "No listening history is available yet.")
+              : (panel.service && panel.service.historyMessage
+                ? panel.service.historyMessage : "No listening history is available yet."))
           onActivated: function(item, items, uri) {
             panel.activateMedia(item, items, uri)
           }

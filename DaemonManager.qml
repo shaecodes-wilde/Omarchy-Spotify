@@ -20,6 +20,7 @@ Item {
   property string unitName: "omarchy-spotify.service"
   property bool authenticationCancelled: false
   property bool mprisPresent: false
+  property bool requireNative: false
 
   property bool binaryAvailable: false
   property bool binaryChecked: false
@@ -96,7 +97,9 @@ Item {
     if (setupBusy || !pluginDir) return
     lastError = ""
     setupBusy = true
-    setupCommand.command = [pluginDir + "/scripts/setup-playback.sh"]
+    setupCommand.command = requireNative
+      ? [pluginDir + "/scripts/setup-playback.sh", "--require-native"]
+      : [pluginDir + "/scripts/setup-playback.sh"]
     setupCommand.running = true
   }
 
@@ -309,6 +312,7 @@ Item {
       root.setupBusy = false
       if (exitCode === 0) {
         root.lastError = ""
+        if (root.requireNative) root.usingFallbackRuntime = false
         root.binaryAvailable = true
         root.binaryChecked = true
         root.unitAvailable = true
@@ -319,7 +323,9 @@ Item {
         return
       }
       root.checkRequirements()
-      root.lastError = exitCode === 20
+      root.lastError = exitCode === 30
+        ? "Spotify sign-in support could not be installed. Check your connection and try again."
+        : exitCode === 20
         ? "Omarchy could not open the system authorization prompt"
         : (exitCode === 21
           ? "Playback setup was cancelled or could not install the required package"
