@@ -13,6 +13,12 @@ small artists that fit your taste while making room for deeper exploration.
 4. Enter your username and API key, then select **Apply Last.fm**.
 5. Open **For you → Hidden gems**, choose the depth, and select **Refresh gems**.
 
+Select the play icon next to **Last.fm settings** to play all current results
+from the top in displayed order, including tracks below the scroll area.
+Search filters are respected and shuffle is turned off. This starts temporary
+playback without saving a Spotify playlist. The button is disabled while gems
+are refreshing or there are no matching results.
+
 No Last.fm login, password, API secret, write permission, or new Spotify scope
 is required. The shipped username and API key are empty. Use your own key;
 never commit it to a source checkout or include it in an issue report.

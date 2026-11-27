@@ -731,6 +731,16 @@ Item {
     activateMedia(service.selectedPlaylist)
   }
 
+  function playHiddenGems() {
+    if (!service || currentTab !== "home" || homeType !== "gems"
+        || service.discovery.loading) return
+    var collection = pageCollection()
+    var items = collection ? Api.arrayValues(collection.visibleItems) : []
+    if (!items.length) return
+    if (unifiedSearchField.activeFocus) focusScope.forceActiveFocus()
+    service.playItem(items[0], items, "", "Playing Hidden gems in displayed order", null, true)
+  }
+
   function textInputFocused() {
     var item = window.activeFocusItem
     return !!item && ("acceptableInput" in item || "echoMode" in item)
@@ -1113,6 +1123,9 @@ Item {
       actions.push("home-overview", "home-gems", "home-recent", "home-tracks", "home-artists", "home-albums")
     if (currentTab === "home" && homeType === "gems")
       actions.push("gem-obscurity", "gem-adventure", "gem-refresh", "gem-settings")
+    if (currentTab === "home" && homeType === "gems" && service
+        && !service.discovery.loading && pageCollection() && pageCollection().listCount > 0)
+      actions.push("gem-play")
     if (currentTab === "library")
       actions.push("library-tracks", "library-albums", "library-artists",
         "library-shows", "library-episodes", "library-audiobooks")
@@ -1383,6 +1396,7 @@ Item {
     else if (action === "gem-adventure") cycleDiscoverySetting("discoveryAdventure")
     else if (action === "gem-refresh" && service) service.loadHiddenGems(true)
     else if (action === "gem-settings") chooseTab("setup")
+    else if (action === "gem-play") playHiddenGems()
     else if (action.indexOf("home-") === 0) homeType = action.substring(5)
     else if (action.indexOf("library-") === 0) {
       libraryType = action.substring(8)

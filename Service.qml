@@ -491,6 +491,7 @@ Item {
   property var pendingPlaybackBody: null
   property string pendingPlaybackMessage: ""
   property var pendingPlaybackRadio: null
+  property bool pendingPlaybackOrdered: false
   property int pendingPlaybackSerial: 0
   property int radioSerial: 0
   property var lastRadioPlaylist: null
@@ -2961,6 +2962,7 @@ Item {
     pendingPlaybackBody = null
     pendingPlaybackMessage = ""
     pendingPlaybackRadio = null
+    pendingPlaybackOrdered = false
     pendingPlaybackSerial = 0
     if (keepActivation !== true) localActivationRequested = false
   }
@@ -3018,11 +3020,13 @@ Item {
     var body = pendingPlaybackBody
     var successMessage = pendingPlaybackMessage
     var radioPlaylist = pendingPlaybackRadio
+    var ordered = pendingPlaybackOrdered
     var account = dataSerial
     clearPendingPlayback()
     localSocketWaitTimer.stop()
-    backendClient.loadPlayback(body, function(ok, result, error, outcomeUnknown) {
-      if (account !== root.dataSerial || playbackSerial !== root.radioSerial) return
+    function loaded(ok, result, error, outcomeUnknown) {
+      if (account !== root.dataSerial || playbackSerial !== root.radioSerial
+          || root.localPlaybackStopped) return
       if (ok) {
         if (playbackSerial === root.radioSerial)
           root.radioContextSelected = !!radioPlaylist
@@ -3038,14 +3042,23 @@ Item {
       root.pendingPlaybackBody = body
       root.pendingPlaybackMessage = successMessage
       root.pendingPlaybackRadio = radioPlaylist
+      root.pendingPlaybackOrdered = ordered
       root.pendingPlaybackSerial = playbackSerial
       root.succeed(Api.localSocketFallbackMessage())
       root.sendPendingPlayback(Api.playbackTargetDeviceId(
         root.localDevice() || root.chooseDevice(), root.selectedDeviceExplicit))
-    })
+    }
+    if (ordered) {
+      backendClient.sendCommand("set_shuffle", { enabled: false }, function(ok, result, error, outcomeUnknown) {
+        if (account !== root.dataSerial || playbackSerial !== root.radioSerial
+            || root.localPlaybackStopped) return
+        if (!ok) loaded(false, result, error, outcomeUnknown)
+        else backendClient.loadPlayback(body, loaded)
+      })
+    } else backendClient.loadPlayback(body, loaded)
   }
 
-  function playItem(item, sourceItems, contextUri, successMessage, explicitRadio) {
+  function playItem(item, sourceItems, contextUri, successMessage, explicitRadio, ordered) {
     localPlaybackStopped = false
     var playbackSerial = ++radioSerial
     var body = Api.playbackBody(item, sourceItems, contextUri)
@@ -3057,6 +3070,7 @@ Item {
     pendingPlaybackBody = body
     pendingPlaybackMessage = String(successMessage || "")
     pendingPlaybackRadio = radioPlaylistForPlayback(item, contextUri, explicitRadio)
+    pendingPlaybackOrdered = ordered === true
     pendingPlaybackSerial = playbackSerial
     localActivationRequested = true
     deviceProbeAttempts = 0
@@ -3126,6 +3140,7 @@ Item {
     var body = pendingPlaybackBody
     var successMessage = pendingPlaybackMessage
     var radioPlaylist = pendingPlaybackRadio
+    var ordered = pendingPlaybackOrdered
     var playbackSerial = pendingPlaybackSerial
     var account = dataSerial
     var selection = selectedDeviceId
@@ -3138,9 +3153,12 @@ Item {
         && selection === root.selectedDeviceId && explicit === root.selectedDeviceExplicit
         && !root.localPlaybackStopped
     }
-    function dispatch(retried) {
+    function dispatch(retried, shuffleReady) {
       if (!current()) return
-      spotifyApi.request("PUT", "/me/player/play", { device_id: deviceId }, body,
+      var disablingShuffle = ordered && !shuffleReady
+      spotifyApi.request("PUT", disablingShuffle ? "/me/player/shuffle" : "/me/player/play",
+        disablingShuffle ? { device_id: deviceId, state: "false" } : { device_id: deviceId },
+        disablingShuffle ? null : body,
         function(status, payload, error) {
           if (!current()) return
           if (error && !retried && status === 404 && payload && payload.error
@@ -3157,6 +3175,7 @@ Item {
             return
           }
           if (error) { root.fail(error); return }
+          if (disablingShuffle) { dispatch(retried, true); return }
           root.succeed(successMessage)
           root.radioContextSelected = !!radioPlaylist
           root.selectedDeviceId = String(deviceId || root.selectedDeviceId)

@@ -47,6 +47,32 @@ ShellRoot {
       service.backend.playbackCallback(true, {}, "", false)
       if (tests.queueLoads !== 1 || tests.stateLoads !== 1 || service.statusMessage !== "Newest")
         throw new Error("Current load did not complete normally")
+      prepare(13, "Ordered")
+      service.pendingPlaybackOrdered = true
+      var previousLoad = service.backend.playbackCallback
+      service.sendLocalSocketPlayback(13)
+      if (service.backend.shuffleRequests !== 1 || service.backend.playbackCallback !== previousLoad)
+        throw new Error("Ordered playback loaded tracks before disabling shuffle")
+      service.backend.shuffleCallback(true, {}, "", false)
+      if (service.backend.playbackCallback === previousLoad)
+        throw new Error("Successful shuffle did not dispatch the local load")
+      service.backend.playbackCallback(true, {}, "", false)
+      if (tests.queueLoads !== 2 || tests.stateLoads !== 2 || service.statusMessage !== "Ordered")
+        throw new Error("Ordered local playback did not complete")
+      prepare(14, "Unknown shuffle")
+      service.pendingPlaybackOrdered = true
+      service.sendLocalSocketPlayback(14)
+      service.backend.shuffleCallback(false, null, "Outcome unknown", true)
+      if (tests.fallbacks || service.lastError !== "Outcome unknown")
+        throw new Error("Unknown shuffle outcome must be reported without replaying")
+      prepare(15, "Obsolete shuffle")
+      service.pendingPlaybackOrdered = true
+      service.sendLocalSocketPlayback(15)
+      previousLoad = service.backend.playbackCallback
+      service.radioSerial++
+      service.backend.shuffleCallback(true, {}, "", false)
+      if (service.backend.playbackCallback !== previousLoad)
+        throw new Error("Stale shuffle response replaced newer playback")
       console.log("PLAYBACK_LIFETIME_PASS")
       Qt.quit()
     }

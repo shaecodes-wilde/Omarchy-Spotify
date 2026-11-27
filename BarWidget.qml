@@ -2,6 +2,7 @@ import QtQuick
 import QtQuick.Effects
 import Quickshell
 import Quickshell.Io
+import Quickshell.Services.Mpris
 import qs.Commons
 import qs.Ui
 
@@ -14,19 +15,52 @@ BarWidget {
 
   readonly property var spotify: bar && bar.shell
     ? bar.shell.serviceFor("quickshell.spotify") : null
+  // Replacement bars receive a shell facade that does not expose services.
+  readonly property var localPlayer: {
+    if (spotify || !Mpris.players) return null
+    var players = Mpris.players.values
+    var fallback = null
+    for (var i = 0; i < players.length; i++) {
+      var player = players[i]
+      var name = String(player.dbusName).toLowerCase()
+      if (!/(^|\.)(omarchyspotify|spotifyd|librespot)(\.|$)/.test(name)) continue
+      if (player.isPlaying) return player
+      if (!fallback) fallback = player
+    }
+    return fallback
+  }
+  readonly property string currentTitle: spotify ? spotify.title
+    : (localPlayer ? localPlayer.trackTitle : "")
+  readonly property string currentArtist: spotify ? spotify.artist
+    : (localPlayer ? localPlayer.trackArtist : "")
+  readonly property string currentAlbum: spotify ? spotify.album
+    : (localPlayer ? localPlayer.trackAlbum : "")
+  readonly property string currentArtUrl: spotify ? spotify.artUrl
+    : (localPlayer ? localPlayer.trackArtUrl : "")
+  readonly property bool playing: spotify ? spotify.playing : !!localPlayer && localPlayer.isPlaying
+  readonly property bool hasMedia: spotify ? spotify.hasMedia : currentTitle !== "" || currentArtist !== ""
+  readonly property bool artworkEnabled: spotify ? spotify.artworkEnabled
+    : String(root.setting("showArtwork", "On")) !== "Off"
+  readonly property bool canPlayPause: spotify ? spotify.playbackStartable
+    : !!localPlayer && localPlayer.canTogglePlaying
+  readonly property bool canGoPrevious: spotify ? spotify.playbackControllable
+    : !!localPlayer && localPlayer.canGoPrevious
+  readonly property bool canGoNext: spotify ? spotify.playbackControllable
+    : !!localPlayer && localPlayer.canGoNext
   readonly property color foreground: bar ? bar.foreground : Color.foreground
   readonly property color muted: Color.muted
   readonly property string surfaceKey: "spotify-popup-" + String(root)
   readonly property string lyricsRequestKey: surfaceKey + "-lyrics"
-  readonly property string barText: spotify
-    ? Api.barTrackText(spotify.title, spotify.artist,
-      spotify.showTrackTitle, spotify.showArtistName, spotify.playing,
-      spotify.showPausedTrack) : ""
+  readonly property string barText: Api.barTrackText(currentTitle, currentArtist,
+    spotify ? spotify.showTrackTitle : String(root.setting("showTrackTitle", "On")) !== "Off",
+    spotify ? spotify.showArtistName : String(root.setting("showArtistName", "Off")) === "On",
+    playing,
+    spotify ? spotify.showPausedTrack : String(root.setting("showPausedTrack", "On")) !== "Off")
   readonly property bool miniPlayerEnabled:
     String(root.setting("showMiniPlayer", "On")) !== "Off"
   readonly property bool vinylRecordEnabled:
     String(root.setting("showVinylRecord", "Off")) === "On"
-  readonly property bool iconOnly: !spotify || vertical || !spotify.hasMedia
+  readonly property bool iconOnly: vertical || !hasMedia
     || barText === ""
   property bool popupOpen: false
   property bool contextMenuVisible: false
@@ -99,11 +133,11 @@ BarWidget {
     if (spotify && spotify.currentTrackSaveAvailable) actions.push("like")
     if (spotify && spotify.lengthSeconds > 0
         && spotify.playbackControllable) actions.push("seek")
-    if (spotify && spotify.playbackControllable) {
-      actions.push("shuffle", "previous", "play", "next", "repeat")
-    } else if (spotify && spotify.playbackStartable) {
-      actions.push("play")
-    }
+    if (spotify && spotify.playbackControllable) actions.push("shuffle")
+    if (canGoPrevious) actions.push("previous")
+    if (canPlayPause || (spotify && spotify.playbackControllable)) actions.push("play")
+    if (canGoNext) actions.push("next")
+    if (spotify && spotify.playbackControllable) actions.push("repeat")
     if (spotify && spotify.lyricsAvailable) actions.push("lyrics")
     if (spotify && spotify.hasPlayer && spotify.volumeSupported)
       actions.push("volume")
@@ -381,10 +415,13 @@ BarWidget {
       if (spotify) spotify.setShuffle(!spotify.shuffle)
     } else if (action === "previous") {
       if (spotify) spotify.previous()
+      else if (canGoPrevious) localPlayer.previous()
     } else if (action === "play") {
       if (spotify) spotify.togglePlayback()
+      else if (canPlayPause) localPlayer.togglePlaying()
     } else if (action === "next") {
       if (spotify) spotify.next()
+      else if (canGoNext) localPlayer.next()
     } else if (action === "repeat") {
       if (spotify) spotify.cycleRepeat()
     } else if (action === "lyrics") openLyrics()
@@ -445,9 +482,9 @@ BarWidget {
     if (event.key === Qt.Key_Escape) {
       close()
     } else if (ctrl && event.key === Qt.Key_Left) {
-      if (spotify) spotify.previous()
+      activateMiniAction("previous")
     } else if (ctrl && event.key === Qt.Key_Right) {
-      if (spotify) spotify.next()
+      activateMiniAction("next")
     } else if (shift && !ctrl && event.key === Qt.Key_Left) {
       seekBy(-10)
     } else if (shift && !ctrl && event.key === Qt.Key_Right) {
@@ -467,7 +504,7 @@ BarWidget {
     } else if (ctrl && shift && !alt && event.key === Qt.Key_B) {
       if (!event.isAutoRepeat) openCurrentAlbum()
     } else if (plain && event.key === Qt.Key_Space) {
-      if (spotify && !event.isAutoRepeat) spotify.togglePlayback()
+      if (!event.isAutoRepeat) activateMiniAction("play")
     } else if (plain && event.key === Qt.Key_M) {
       if (!event.isAutoRepeat) toggleMute()
     } else if (plain && event.key === Qt.Key_O) {
@@ -554,13 +591,13 @@ BarWidget {
     slotSize: Style.bar.iconSlot
     opticalSize: Style.bar.iconCanvas
     fontSize: root.iconOnly ? Math.round(Style.bar.iconFont * 0.9) : Style.font.body
-    active: root.spotify && root.spotify.playing
+    active: root.playing
     // Follow the bar's contrast-aware color when transparency changes.
     // Keep root.foreground theme-based for the popup/player surfaces.
     foreground: root.bar ? root.bar.barForeground : root.foreground
     activeColor: foreground
-    tooltipText: root.spotify && root.spotify.hasMedia
-      ? root.spotify.title + (root.spotify.artist ? " — " + root.spotify.artist : "")
+    tooltipText: root.hasMedia
+      ? root.currentTitle + (root.currentArtist ? " — " + root.currentArtist : "")
       : (root.spotify && !root.spotify.accountConnected
         ? "Set up Omarchy Spotify" : "Omarchy Spotify")
     // Size from the painted glyph and label plus the real inner chrome.
@@ -682,16 +719,15 @@ BarWidget {
         root.contextMenuVisible = true
         root.popupOpen = true
       } else if (mouseButton === Qt.MiddleButton) {
-        if (root.spotify) root.spotify.togglePlayback()
+        root.activateMiniAction("play")
       } else {
         root.contextMenuVisible = false
         root.toggle()
       }
     }
     onWheelMoved: function(delta) {
-      if (!root.spotify) return
-      if (delta > 0) root.spotify.previous()
-      else if (delta < 0) root.spotify.next()
+      if (delta > 0) root.activateMiniAction("previous")
+      else if (delta < 0) root.activateMiniAction("next")
     }
   }
 
@@ -862,8 +898,7 @@ BarWidget {
           miniNowPlayingMetadata.implicitHeight)
         height: implicitHeight
         readonly property real metadataSpacing: Style.space(12)
-        readonly property bool artworkVisible: !root.spotify
-          || root.spotify.artworkEnabled
+        readonly property bool artworkVisible: root.artworkEnabled
         visible: !root.lyricsInstallPromptVisible
           && (!root.spotify || root.spotify.accountConnected)
 
@@ -887,8 +922,9 @@ BarWidget {
               id: popupArtwork
               anchors.fill: parent
               anchors.margins: Style.space(3)
-              requestedSource: !root.vinylRecordEnabled && root.popupOpen && root.spotify && root.spotify.artworkEnabled
-                ? Api.idleMediaText(root.spotify.artUrl, root.spotify.lastPlayedItem, "imageUrl", "") : ""
+              requestedSource: !root.vinylRecordEnabled && root.popupOpen && root.artworkEnabled
+                ? Api.idleMediaText(root.currentArtUrl,
+                  root.spotify ? root.spotify.lastPlayedItem : null, "imageUrl", "") : ""
               sourceSize.width: 156
               sourceSize.height: 156
               fillMode: Image.PreserveAspectFit
@@ -941,14 +977,15 @@ BarWidget {
                 duration: 7000
                 loops: Animation.Infinite
                 running: root.vinylRecordEnabled && root.popupOpen
-                  && root.spotify && root.spotify.artworkEnabled && root.spotify.playing
+                  && root.artworkEnabled && root.playing
               }
 
               RetryImage {
                 id: popupRecordArtwork
                 anchors.fill: parent
-                requestedSource: root.vinylRecordEnabled && root.popupOpen && root.spotify && root.spotify.artworkEnabled
-                  ? Api.idleMediaText(root.spotify.artUrl, root.spotify.lastPlayedItem, "imageUrl", "") : ""
+                requestedSource: root.vinylRecordEnabled && root.popupOpen && root.artworkEnabled
+                  ? Api.idleMediaText(root.currentArtUrl,
+                    root.spotify ? root.spotify.lastPlayedItem : null, "imageUrl", "") : ""
                 sourceSize.width: 156
                 sourceSize.height: 156
                 fillMode: Image.PreserveAspectCrop
@@ -1008,10 +1045,10 @@ BarWidget {
                 - (barCurrentTrackLikeButton.visible
                   ? barCurrentTrackLikeButton.width + parent.spacing : 0))
               anchors.verticalCenter: parent.verticalCenter
-              text: Api.idleMediaText(root.spotify ? root.spotify.title : "",
+              text: Api.idleMediaText(root.currentTitle,
                 root.spotify ? root.spotify.lastPlayedItem : null, "name",
                 "Nothing playing")
-              color: root.spotify && root.spotify.title
+              color: root.currentTitle
                 ? root.foreground : root.muted
               font.family: root.bar ? root.bar.fontFamily : Style.font.family
               font.pixelSize: Style.font.subtitle
@@ -1066,7 +1103,7 @@ BarWidget {
               anchors.rightMargin: Style.space(3) + miniArtistHint.reservedRight
               artists: root.spotify ? root.spotify.currentArtists : []
               fallbackText: Api.idleMediaText(
-                root.spotify ? root.spotify.artist : "",
+                root.currentArtist,
                 root.spotify ? root.spotify.lastPlayedItem : null, "subtitle", "")
               fallbackClickable: fallbackText !== "" && artists.length === 0
                 && root.spotify && root.spotify.currentArtistContextAvailable
@@ -1112,7 +1149,7 @@ BarWidget {
               anchors.rightMargin: Style.space(3) + miniAlbumHint.reservedRight
               artists: []
               fallbackText: Api.idleMediaText(
-                root.spotify ? root.spotify.album : "",
+                root.currentAlbum,
                 root.spotify ? root.spotify.lastPlayedItem : null, "album", "")
               fallbackClickable: root.spotify
                 && root.spotify.currentAlbumContextAvailable
@@ -1229,23 +1266,23 @@ BarWidget {
           foreground: root.foreground
           hasCursor: root.miniCursorActive && root.miniCursor === "previous"
           tooltipText: "Previous · Ctrl+Left"
-          enabled: root.spotify && root.spotify.playbackControllable
-          onClicked: if (root.spotify) root.spotify.previous()
+          enabled: root.canGoPrevious
+          onClicked: root.activateMiniAction("previous")
           onHovered: function(on) { if (on) root.setMiniCursor("previous") }
           KeyHint { sequences: ["Ctrl+Left"] }
         }
 
         TransportButton {
-          glyphText: root.spotify && root.spotify.playing ? "󰏤" : "󰐊"
+          glyphText: root.playing ? "󰏤" : "󰐊"
           glyphSize: Style.font.iconLarge
           foreground: root.foreground
-          selected: root.spotify && root.spotify.playing
+          selected: root.playing
           hasCursor: root.miniCursorActive && root.miniCursor === "play"
-          tooltipText: (root.spotify && root.spotify.playing ? "Pause"
+          tooltipText: (root.playing ? "Pause"
             : (root.spotify && root.spotify.canResumeLastPlayed
               ? "Resume last played" : "Play")) + " · Space"
-          enabled: root.spotify && root.spotify.playbackStartable
-          onClicked: if (root.spotify) root.spotify.togglePlayback()
+          enabled: root.canPlayPause
+          onClicked: root.activateMiniAction("play")
           onHovered: function(on) { if (on) root.setMiniCursor("play") }
           KeyHint { sequences: ["Space"] }
         }
@@ -1255,8 +1292,8 @@ BarWidget {
           foreground: root.foreground
           hasCursor: root.miniCursorActive && root.miniCursor === "next"
           tooltipText: "Next · Ctrl+Right"
-          enabled: root.spotify && root.spotify.playbackControllable
-          onClicked: if (root.spotify) root.spotify.next()
+          enabled: root.canGoNext
+          onClicked: root.activateMiniAction("next")
           onHovered: function(on) { if (on) root.setMiniCursor("next") }
           KeyHint { sequences: ["Ctrl+Right"] }
         }
@@ -1353,7 +1390,8 @@ BarWidget {
         Text {
           width: parent.width - openButton.width - Style.space(6)
           anchors.verticalCenter: parent.verticalCenter
-          text: !root.spotify ? "Spotify is unavailable"
+          text: !root.spotify
+            ? (root.localPlayer ? "Local Spotify playback" : "Spotify is unavailable")
             : (root.spotify.lastError !== "" ? root.spotify.lastError
             : (root.spotify.statusMessage !== "" ? root.spotify.statusMessage
             : (!root.spotify.accountConnected ? "Connect Spotify to start"
